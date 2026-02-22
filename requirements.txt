@@ -1,4 +1,0 @@
-aiogram==3.4.1
-httpx==0.24.1
-beautifulsoup4==4.12.3
-pydantic==1.10.13
