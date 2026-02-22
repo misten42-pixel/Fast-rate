@@ -1,3 +1,4 @@
-aiogram==3.3.0
-beautifulsoup4
-httpx
+aiogram==3.4.1
+requests==2.31.0
+telethon==1.34.0
+beautifulsoup4==4.12.3
