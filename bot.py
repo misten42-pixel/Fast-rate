@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 UA = "Mozilla/5.0"
-TIMEOUT = 10
+TIMEOUT = 15
 
 @dataclass
 class Rate:
@@ -24,43 +24,61 @@ class Rate:
 def fmt(x):
     return "—" if x is None else f"{x:.2f}"
 
-# ---------------- GRINEX ----------------
+# --------------------------------------------------
+# Универсальный HTML-парсер (ищет первые 2 цены 70-100)
+# --------------------------------------------------
+def extract_prices_from_html(html: str) -> Rate:
+    prices = re.findall(r"\d{2,3}\.\d{2}", html)
+
+    filtered = []
+    for p in prices:
+        try:
+            value = float(p)
+            if 60 < value < 120:  # разумный диапазон для USDT/RUB
+                filtered.append(value)
+        except:
+            pass
+
+    if len(filtered) >= 2:
+        buy = max(filtered[0], filtered[1])
+        sell = min(filtered[0], filtered[1])
+        return Rate(buy, sell)
+
+    return Rate(None, None)
+
+# --------------------------------------------------
+# GRINEX
+# --------------------------------------------------
 def fetch_grinex():
     try:
         r = requests.get(
-            "https://exchange-api.grinex.io/public/orderbook/usdta7a5",
+            "https://grinex.io/trading/usdta7a5",
             timeout=TIMEOUT,
             headers={"User-Agent": UA}
         )
-        data = r.json()
-        return Rate(
-            float(data["asks"][0][0]),
-            float(data["bids"][0][0])
-        )
+        return extract_prices_from_html(r.text)
     except Exception as e:
-        logging.warning(f"Grinex error: {e}")
+        logging.error(f"Grinex error: {e}")
         return Rate(None, None)
 
-# ---------------- RAPIRA ----------------
+# --------------------------------------------------
+# RAPIRA
+# --------------------------------------------------
 def fetch_rapira():
     try:
         r = requests.get(
-            "https://rapira.net/api/public/ticker",
+            "https://rapira.net/exchange/USDT_RUB",
             timeout=TIMEOUT,
             headers={"User-Agent": UA}
         )
-        data = r.json()
-
-        for item in data:
-            if item.get("symbol") == "USDT_RUB":
-                return Rate(float(item["ask"]), float(item["bid"]))
-
-        return Rate(None, None)
+        return extract_prices_from_html(r.text)
     except Exception as e:
-        logging.warning(f"Rapira error: {e}")
+        logging.error(f"Rapira error: {e}")
         return Rate(None, None)
 
-# ---------------- ABCEX ----------------
+# --------------------------------------------------
+# ABCEX (mobile версия)
+# --------------------------------------------------
 def fetch_abcex():
     try:
         r = requests.get(
@@ -68,16 +86,14 @@ def fetch_abcex():
             timeout=TIMEOUT,
             headers={"User-Agent": UA}
         )
-        html = r.text
-        prices = re.findall(r"\d{2,3}\.\d{2}", html)
-        if len(prices) >= 2:
-            return Rate(float(prices[0]), float(prices[1]))
-        return Rate(None, None)
+        return extract_prices_from_html(r.text)
     except Exception as e:
-        logging.warning(f"ABCEX error: {e}")
+        logging.error(f"ABCEX error: {e}")
         return Rate(None, None)
 
-# ---------------- BOT ----------------
+# --------------------------------------------------
+# BOT
+# --------------------------------------------------
 def keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="📈 Курс", callback_data="rates")]]
@@ -96,6 +112,7 @@ async def main():
         await cb.answer("Обновляю…")
 
         loop = asyncio.get_running_loop()
+
         grinex = await loop.run_in_executor(None, fetch_grinex)
         rapira = await loop.run_in_executor(None, fetch_rapira)
         abcex = await loop.run_in_executor(None, fetch_abcex)
