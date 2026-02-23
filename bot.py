@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 import aiohttp
-import zipfile
-import io
 import xml.etree.ElementTree as ET
 
 from aiogram import Bot, Dispatcher, types
@@ -11,217 +9,106 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PROXY_URL = os.getenv("PROXY_URL")
 
 logging.basicConfig(level=logging.INFO)
 
 
 # ================= RAPIRA =================
 async def get_rapira(session):
-    try:
-        url = "https://api.rapira.net/open/market/rates"
-        async with session.get(url) as response:
-            if response.status != 200:
-                return "🟦 Rapira: нет данных"
+    url = "https://api.rapira.net/open/market/rates"
 
+    try:
+        async with session.get(url, timeout=10) as response:
             data = await response.json()
 
         for market in data.get("data", []):
             if market.get("symbol") == "USDT/RUB":
+                buy = float(market.get("bidPrice", 0))
+                sell = float(market.get("askPrice", 0))
+
                 return (
                     "🟦 Rapira\n\n"
-                    f"🔴 Продажа: {float(market['askPrice']):.2f}\n"
-                    f"🟢 Покупка: {float(market['bidPrice']):.2f}"
+                    f"🔴 Продажа: {sell:.2f}\n"
+                    f"🟢 Покупка: {buy:.2f}"
                 )
+
+        return "🟦 Rapira: нет данных"
 
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
+        return "🟦 Rapira: ошибка"
 
-    return "🟦 Rapira: ошибка"
 
-
-# ================= ABCEX HYBRID =================
+# ================= ABCEX =================
 async def get_abcex(session):
-    depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
-    rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
+    url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
 
-    # --- depth ---
     try:
-        async with session.get(depth_url) as response:
-            if response.status == 200:
-                data = await response.json()
-                orderbook = data.get("data", data)
+        async with session.get(url, timeout=10) as response:
+            data = await response.json()
 
-                bids = orderbook.get("bids", [])
-                asks = orderbook.get("asks", [])
+        bids = data["data"]["bids"]
+        asks = data["data"]["asks"]
 
-                if bids and asks:
-                    return (
-                        "🔵 ABCEX\n\n"
-                        f"🔴 Продажа: {float(asks[0][0]):.2f}\n"
-                        f"🟢 Покупка: {float(bids[0][0]):.2f}"
-                    )
-    except Exception as e:
-        logging.warning(f"ABCEX depth error: {e}")
+        buy = float(bids[0][0])
+        sell = float(asks[0][0])
 
-    # --- fallback rates ---
-    try:
-        async with session.get(rates_url) as response:
-            if response.status != 200:
-                return "🔵 ABCEX: временно недоступен"
-
-            text = await response.text()
-
-        root = ET.fromstring(text)
-
-        buy = sell = None
-
-        for item in root.findall(".//item"):
-            from_currency = item.find("from")
-            to_currency = item.find("to")
-            out_value = item.find("out")
-
-            if from_currency is not None and to_currency is not None:
-                if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    sell = float(out_value.text)
-                if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    buy = round(1 / float(out_value.text), 2)
-
-        if buy and sell:
-            return (
-                "🔵 ABCEX (rates)\n\n"
-                f"🔴 Продажа: {sell:.2f}\n"
-                f"🟢 Покупка: {buy:.2f}"
-            )
+        return (
+            "🔵 ABCEX\n\n"
+            f"🔴 Продажа: {sell:.2f}\n"
+            f"🟢 Покупка: {buy:.2f}"
+        )
 
     except Exception as e:
-        logging.warning(f"ABCEX rates error: {e}")
-
-    return "🔵 ABCEX: временно недоступен"
+        logging.warning(f"ABCEX error: {e}")
+        return "🔵 ABCEX: временно недоступен"
 
 
 # ================= GRINEX =================
 async def get_grinex(session):
-    try:
-        url = "https://grinex.io/rates?offset=0"
-        async with session.get(url) as response:
-            if response.status != 200:
-                return "🟠 Grinex: нет данных"
+    url = "https://grinex.io/rates?offset=0"
 
+    try:
+        async with session.get(url, timeout=10) as response:
             data = await response.json()
 
         pair = data.get("usdta7a5")
 
-        if pair:
-            return (
-                "🟠 Grinex\n\n"
-                f"🔴 Продажа: {float(pair['sell']):.2f}\n"
-                f"🟢 Покупка: {float(pair['buy']):.2f}"
-            )
+        buy = float(pair.get("buy", 0))
+        sell = float(pair.get("sell", 0))
+
+        return (
+            "🟠 Grinex\n\n"
+            f"🔴 Продажа: {sell:.2f}\n"
+            f"🟢 Покупка: {buy:.2f}"
+        )
 
     except Exception as e:
         logging.warning(f"Grinex error: {e}")
+        return "🟠 Grinex: ошибка"
 
-    return "🟠 Grinex: ошибка"
 
+# ================= BESTCHANGE (через proxy) =================
+async def get_bestchange(session):
+    try:
+        proxy = PROXY_URL
 
-# ================= BESTCHANGE PUBLIC MIRRORS =================async def get_bestchange(session):
+        url = "https://mirror1.bestchange.app/v2/"
 
-    async def get_bestchange(session):
+        async with session.get(url, proxy=proxy, timeout=10) as response:
+            if response.status != 200:
+                return "💱 USDT/AED: нет данных"
 
-    proxy = os.getenv("PROXY_URL")
+        return "💱 USDT/AED: соединение есть (API подключено)"
 
-    urls = [
-        "http://mirror1.bestchange.app/info.zip",
-        "http://mirror2.bestchange.app/info.zip",
-        "http://mirror3.bestchange.app/info.zip",
-        "http://mirror4.bestchange.app/info.zip",
-        "http://api.bestchange.ru/info.zip",
-    ]
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "*/*",
-        "Connection": "keep-alive",
-    }
-
-    for url in urls:
-        try:
-            async with session.get(
-                url,
-                headers=headers,
-                timeout=15,
-                proxy=proxy  # ← ВОТ ОНО
-            ) as response:
-
-                if response.status != 200:
-                    continue
-
-                data = await response.read()
-
-            with zipfile.ZipFile(io.BytesIO(data)) as z:
-                rates_xml = z.read("rates.xml")
-                exch_xml = z.read("exchangers.xml")
-                curr_xml = z.read("currencies.xml")
-
-            rates_root = ET.fromstring(rates_xml)
-            exch_root = ET.fromstring(exch_xml)
-            curr_root = ET.fromstring(curr_xml)
-
-            usdt_id = None
-            aed_id = None
-
-            for item in curr_root.findall("item"):
-                name = item.find("name").text.lower()
-                cid = item.find("id").text
-
-                if "trc20" in name and "tether" in name:
-                    usdt_id = cid
-
-                if "aed" in name:
-                    aed_id = cid
-
-            if not usdt_id or not aed_id:
-                continue
-
-            exchangers = {
-                item.find("id").text: item.find("name").text
-                for item in exch_root.findall("item")
-            }
-
-            results = []
-
-            for rate in rates_root.findall("item"):
-                if (
-                    rate.find("from").text == usdt_id and
-                    rate.find("to").text == aed_id
-                ):
-                    exch_id = rate.find("exchange").text
-                    price = float(rate.find("in").text)
-
-                    results.append(
-                        (exchangers.get(exch_id, "Unknown"), price)
-                    )
-
-            results = sorted(results, key=lambda x: x[1])[:3]
-
-            if results:
-                text = "💱 USDT/AED (Top 3)\n\n"
-                for i, (name, price) in enumerate(results, 1):
-                    text += f"{i}) {name}\nКурс: {price:.4f}\n\n"
-                return text.strip()
-
-        except Exception as e:
-            logging.warning(f"BestChange proxy error: {e}")
-            continue
-
-    return "💱 USDT/AED: нет данных"
+    except Exception as e:
+        logging.warning(f"BestChange error: {e}")
+        return "💱 USDT/AED: ошибка подключения"
 
 
 # ================= TELEGRAM =================
 async def main():
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN не установлен")
-
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
 
@@ -236,38 +123,24 @@ async def main():
     @dp.message(Command("start"))
     async def start_handler(message: types.Message):
         await message.answer(
-            "Выберите направление:",
+            "Бот запущен.\nНажмите кнопку ниже:",
             reply_markup=keyboard
         )
 
-    # --- RUB ---
     @dp.message(lambda message: message.text == "📊 Rate USDT/₽")
-    async def rub_handler(message: types.Message):
-
-        timeout = aiohttp.ClientTimeout(total=8)
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+    async def rate_handler(message: types.Message):
+        async with aiohttp.ClientSession() as session:
             results = await asyncio.gather(
                 get_rapira(session),
                 get_abcex(session),
-                get_grinex(session),
-                return_exceptions=True
+                get_grinex(session)
             )
 
-        clean_results = [
-            r if not isinstance(r, Exception) else "⚠ Ошибка получения данных"
-            for r in results
-        ]
+        await message.answer("\n\n".join(results))
 
-        await message.answer("\n\n".join(clean_results))
-
-    # --- AED ---
     @dp.message(lambda message: message.text == "💱 USDT/AED")
     async def aed_handler(message: types.Message):
-
-        timeout = aiohttp.ClientTimeout(total=10)
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession() as session:
             result = await get_bestchange(session)
 
         await message.answer(result)
