@@ -155,6 +155,8 @@ def extract_rate_from_fs(row):
     return None
 
 
+import re
+
 async def parse_sell(session, url):
     async with session.get(
         url,
@@ -171,23 +173,32 @@ async def parse_sell(session, url):
     results = []
 
     for row in rows[:3]:
-        cells = row.find_all("td")
-        if len(cells) < 3:
-            continue
-
         name_tag = row.select_one(".bj")
-
-        # В продаже курс в колонке "Отдаете"
-        give_cell = cells[2]
-        rate_tag = give_cell.select_one(".fs")
-
-        if not name_tag or not rate_tag:
+        if not name_tag:
             continue
 
         name = name_tag.get_text(strip=True)
-        rate = rate_tag.get_text(strip=True)
 
-        results.append(f"{name} — {rate}")
+        rate = None
+
+        # Ищем число с точкой во ВСЕХ ячейках строки
+        for cell in row.find_all("td"):
+            text = cell.get_text(" ", strip=True)
+
+            # ищем число типа 3.668100
+            match = re.search(r"\d+\.\d+", text)
+            if match:
+                candidate = match.group()
+
+                # исключаем 1 USDT
+                if candidate.startswith("1."):
+                    continue
+
+                rate = candidate
+                break
+
+        if rate:
+            results.append(f"{name} — {rate}")
 
     return results
 
