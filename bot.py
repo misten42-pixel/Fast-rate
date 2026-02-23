@@ -172,15 +172,11 @@ async def parse_sell(session, url):
         name_tag = row.select_one(".bj")
         fs_blocks = row.select(".fs")
 
-        rate = None
-        for fs in fs_blocks:
-            text = fs.get_text(strip=True)
-            if "AED" in text:
-                rate = text.replace(" AED", "").strip()
-                break
-
-        if not name_tag or not rate:
+        if not name_tag or len(fs_blocks) < 2:
             continue
+
+        # В продаже второй .fs — это колонка "Получаете"
+        rate = fs_blocks[1].get_text(strip=True)
 
         name = name_tag.get_text(strip=True)
         results.append(f"{name} — {rate}")
