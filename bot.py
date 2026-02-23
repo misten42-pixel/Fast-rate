@@ -131,12 +131,11 @@ async def get_grinex(session):
 
 
 # ================= BESTCHANGE (Dubai fixed) =================
-# ================= BESTCHANGE FINAL STABLE =================
 from bs4 import BeautifulSoup
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept-Language": "ru-RU,ru;q=0.9",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept-Language": "ru-RU,ru;q=0.9"
 }
 
 COOKIES = {
@@ -144,14 +143,11 @@ COOKIES = {
 }
 
 
-async def parse_bestchange(session, url):
-    async with session.get(
-        url,
-        proxy=PROXY_URL,
-        headers=HEADERS,
-        cookies=COOKIES,
-        timeout=15
-    ) as response:
+async def parse_sell(session, url):
+    async with session.get(url, proxy=PROXY_URL,
+                           headers=HEADERS,
+                           cookies=COOKIES,
+                           timeout=15) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
@@ -160,22 +156,39 @@ async def parse_bestchange(session, url):
     results = []
 
     for row in rows[:3]:
-        try:
-            name = row.select_one(".bj")
-            rate = row.select_one(".fs")
-            reserve = row.select_one(".ar")
-
-            if not name or not rate or not reserve:
-                continue
-
-            name = name.get_text(strip=True)
-            rate = rate.get_text(strip=True)
-            reserve = reserve.get_text(strip=True)
-
-            results.append(f"{name} — {rate} — резерв: {reserve}")
-
-        except:
+        cells = row.find_all("td")
+        if len(cells) < 3:
             continue
+
+        name = cells[0].get_text(strip=True)
+        rate = cells[2].get_text(strip=True)
+
+        results.append(f"{name} — {rate}")
+
+    return results
+
+
+async def parse_buy(session, url):
+    async with session.get(url, proxy=PROXY_URL,
+                           headers=HEADERS,
+                           cookies=COOKIES,
+                           timeout=15) as response:
+        html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("table#content_table tbody tr")
+
+    results = []
+
+    for row in rows[:3]:
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        name = cells[0].get_text(strip=True)
+        rate = cells[1].get_text(strip=True)
+
+        results.append(f"{name} — {rate}")
 
     return results
 
@@ -185,11 +198,8 @@ async def get_bestchange(session):
         sell_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
         buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        sell_list = await parse_bestchange(session, sell_url)
-        buy_list = await parse_bestchange(session, buy_url)
-
-        if not sell_list and not buy_list:
-            return "💱 USDT/AED: нет данных"
+        sell_list = await parse_sell(session, sell_url)
+        buy_list = await parse_buy(session, buy_url)
 
         text = "💱 USDT/AED (Dubai)\n\n"
 
