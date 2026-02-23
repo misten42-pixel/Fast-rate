@@ -26,12 +26,13 @@ async def get_rapira(session):
 
         for market in data.get("data", []):
             if market.get("symbol") == "USDT/RUB":
-                bid = float(market.get("bidPrice", 0))
-                ask = float(market.get("askPrice", 0))
+                buy = float(market.get("bidPrice", 0))
+                sell = float(market.get("askPrice", 0))
+
                 return (
-                    "🟦 Rapira\n"
-                    f"🔴 Покупка: {bid:.2f}\n"
-                    f"🟢 Продажа: {ask:.2f}"
+                    "🟦 Rapira\n\n"
+                    f"🔴 Продажа: {sell:.2f}\n"
+                    f"🟢 Покупка: {buy:.2f}"
                 )
 
         return "🟦 Rapira: нет данных"
@@ -51,19 +52,19 @@ async def get_abcex(session):
         async with session.get(depth_url, timeout=10) as response:
             if response.status == 200:
                 data = await response.json()
-
                 orderbook = data.get("data", data)
 
                 bids = orderbook.get("bids", [])
                 asks = orderbook.get("asks", [])
 
                 if bids and asks:
-                    best_bid = float(bids[0][0])
-                    best_ask = float(asks[0][0])
+                    buy = float(bids[0][0])
+                    sell = float(asks[0][0])
+
                     return (
-                        "🔵 ABCEX\n"
-                        f"🔴 Покупка: {best_bid:.2f}\n"
-                        f"🟢 Продажа: {best_ask:.2f}"
+                        "🔵 ABCEX\n\n"
+                        f"🔴 Продажа: {sell:.2f}\n"
+                        f"🟢 Покупка: {buy:.2f}"
                     )
     except Exception:
         pass
@@ -78,8 +79,8 @@ async def get_abcex(session):
 
         root = ET.fromstring(text)
 
-        bid = None
-        ask = None
+        buy = None
+        sell = None
 
         for item in root.findall(".//item"):
             from_currency = item.find("from")
@@ -88,15 +89,15 @@ async def get_abcex(session):
 
             if from_currency is not None and to_currency is not None:
                 if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    ask = float(out_value.text)
+                    sell = float(out_value.text)
                 if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    bid = round(1 / float(out_value.text), 2)
+                    buy = round(1 / float(out_value.text), 2)
 
-        if bid and ask:
+        if buy and sell:
             return (
-                "🔵 ABCEX (rates)\n"
-                f"🔴 Покупка: {bid:.2f}\n"
-                f"🟢 Продажа: {ask:.2f}"
+                "🔵 ABCEX (rates)\n\n"
+                f"🔴 Продажа: {sell:.2f}\n"
+                f"🟢 Покупка: {buy:.2f}"
             )
 
         return "🔵 ABCEX: временно недоступен"
@@ -119,12 +120,13 @@ async def get_grinex(session):
         pair = data.get("usdta7a5")
 
         if pair:
-            bid = float(pair.get("buy", 0))
-            ask = float(pair.get("sell", 0))
+            buy = float(pair.get("buy", 0))
+            sell = float(pair.get("sell", 0))
+
             return (
-                "🟠 Grinex\n"
-                f"🔴 Покупка: {bid:.2f}\n"
-                f"🟢 Продажа: {ask:.2f}"
+                "🟠 Grinex\n\n"
+                f"🔴 Продажа: {sell:.2f}\n"
+                f"🟢 Покупка: {buy:.2f}"
             )
 
         return "🟠 Grinex: нет данных"
@@ -142,7 +144,6 @@ async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
 
-    # Кнопка
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📊 Rate USDT/₽")]],
         resize_keyboard=True
