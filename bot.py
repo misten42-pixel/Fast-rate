@@ -22,16 +22,12 @@ def fetch_grinex():
 
         pair = data.get("usdta7a5")
         if pair:
-            buy_price = float(pair["sell"])  # ты покупаешь USDT
-            sell_price = float(pair["buy"])  # ты продаёшь USDT
-
             return {
-                "buy_price": buy_price,
+                "buy_price": float(pair["sell"]),   # ты покупаешь USDT
                 "buy_volume": None,
-                "sell_price": sell_price,
+                "sell_price": float(pair["buy"]),   # ты продаёшь USDT
                 "sell_volume": None,
             }
-
         return None
     except Exception as e:
         logging.warning(f"Grinex error: {e}")
@@ -45,8 +41,8 @@ def fetch_rapira():
         r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
         data = r.json()
 
-        asks = data.get("data", {}).get("asks", [])
-        bids = data.get("data", {}).get("bids", [])
+        asks = data.get("asks", [])
+        bids = data.get("bids", [])
 
         if asks and bids:
             return {
@@ -55,7 +51,6 @@ def fetch_rapira():
                 "sell_price": float(bids[0][0]),
                 "sell_volume": float(bids[0][1]),
             }
-
         return None
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
@@ -69,8 +64,9 @@ def fetch_abcex():
         r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
         data = r.json()
 
-        asks = data.get("asks", [])
-        bids = data.get("bids", [])
+        book = data.get("data", {})
+        asks = book.get("asks", [])
+        bids = book.get("bids", [])
 
         if asks and bids:
             return {
@@ -79,7 +75,6 @@ def fetch_abcex():
                 "sell_price": float(bids[0][0]),
                 "sell_volume": float(bids[0][1]),
             }
-
         return None
     except Exception as e:
         logging.warning(f"ABCEX error: {e}")
@@ -91,26 +86,27 @@ def format_exchange(name, data):
     if not data:
         return f"{name}: — / —"
 
-    buy = f"{data['buy_price']:.2f}"
-    sell = f"{data['sell_price']:.2f}"
+    buy_price = f"{data['buy_price']:.2f}"
+    sell_price = f"{data['sell_price']:.2f}"
 
     buy_vol = f"{data['buy_volume']:.2f}" if data["buy_volume"] else "—"
     sell_vol = f"{data['sell_volume']:.2f}" if data["sell_volume"] else "—"
 
     return (
         f"{name}\n"
-        f"  Покупка: {buy} ({buy_vol} USDT)\n"
-        f"  Продажа: {sell} ({sell_vol} USDT)\n"
+        f"  Покупка: {buy_price} ({buy_vol} USDT)\n"
+        f"  Продажа: {sell_price} ({sell_vol} USDT)\n"
     )
 
 
-# ---------------- BOT ----------------
+# ---------------- KEYBOARD ----------------
 def keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="📈 Курс", callback_data="rates")]]
     )
 
 
+# ---------------- BOT ----------------
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
