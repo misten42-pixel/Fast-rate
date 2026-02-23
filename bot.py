@@ -121,13 +121,16 @@ async def get_grinex(session):
 
 # ================= BESTCHANGE PRODUCTION =================
 
+# ================= BESTCHANGE FINAL STABLE =================
+
 BESTCHANGE_URL = "https://api.bestchange.ru/info.zip"
 CACHE_TTL = 60
 
 _bestchange_cache = {
     "timestamp": 0,
     "rates": None,
-    "exch": None
+    "exch": None,
+    "curr": None
 }
 
 
@@ -138,7 +141,11 @@ async def get_bestchange_data():
         _bestchange_cache["rates"] is not None
         and now - _bestchange_cache["timestamp"] < CACHE_TTL
     ):
-        return _bestchange_cache["rates"], _bestchange_cache["exch"]
+        return (
+            _bestchange_cache["rates"],
+            _bestchange_cache["exch"],
+            _bestchange_cache["curr"]
+        )
 
     async with aiohttp.ClientSession() as session:
         async with session.get(BESTCHANGE_URL, timeout=20) as resp:
@@ -148,15 +155,28 @@ async def get_bestchange_data():
 
     rates_xml = z.read("rates.xml")
     exch_xml = z.read("exch.xml")
+    curr_xml = z.read("currencies.xml")
 
     _bestchange_cache["timestamp"] = now
     _bestchange_cache["rates"] = rates_xml
     _bestchange_cache["exch"] = exch_xml
+    _bestchange_cache["curr"] = curr_xml
 
-    return rates_xml, exch_xml
+    return rates_xml, exch_xml, curr_xml
 
 
-def parse_bestchange_xml(rates_xml, exch_xml, from_id, to_id, title, reverse=False):
+def find_currency_id(curr_xml, keyword):
+    root = ET.fromstring(curr_xml)
+
+    for curr in root.findall("currency"):
+        name = curr.find("name").text.lower()
+        if keyword.lower() in name:
+            return curr.find("id").text
+
+    return None
+
+
+def parse_bestchange(rates_xml, exch_xml, from_id, to_id, title, reverse=False):
     rates_root = ET.fromstring(rates_xml)
     exch_root = ET.fromstring(exch_xml)
 
@@ -169,8 +189,8 @@ def parse_bestchange_xml(rates_xml, exch_xml, from_id, to_id, title, reverse=Fal
 
     for rate in rates_root.findall("rate"):
         if (
-            rate.find("from").text == str(from_id)
-            and rate.find("to").text == str(to_id)
+            rate.find("from").text == from_id
+            and rate.find("to").text == to_id
         ):
             exch_id = rate.find("exchanger").text
             price = float(rate.find("in").text)
@@ -197,29 +217,39 @@ def parse_bestchange_xml(rates_xml, exch_xml, from_id, to_id, title, reverse=Fal
     return text.strip()
 
 
-# BestChange IDs
-# 36 = USDT TRC20
-# 93 = AED Cash
-
 async def get_usdt_aed_buy():
-    rates_xml, exch_xml = await get_bestchange_data()
-    return parse_bestchange_xml(
+    rates_xml, exch_xml, curr_xml = await get_bestchange_data()
+
+    usdt_id = find_currency_id(curr_xml, "Tether TRC20")
+    aed_id = find_currency_id(curr_xml, "Dirham")
+
+    if not usdt_id or not aed_id:
+        return "💱 USDT/AED: валюты не найдены"
+
+    return parse_bestchange(
         rates_xml,
         exch_xml,
-        36,
-        93,
+        usdt_id,
+        aed_id,
         "💱 USDT/AED — Покупка USDT",
         reverse=False
     )
 
 
 async def get_usdt_aed_sell():
-    rates_xml, exch_xml = await get_bestchange_data()
-    return parse_bestchange_xml(
+    rates_xml, exch_xml, curr_xml = await get_bestchange_data()
+
+    usdt_id = find_currency_id(curr_xml, "Tether TRC20")
+    aed_id = find_currency_id(curr_xml, "Dirham")
+
+    if not usdt_id or not aed_id:
+        return "💱 USDT/AED: валюты не найдены"
+
+    return parse_bestchange(
         rates_xml,
         exch_xml,
-        93,
-        36,
+        aed_id,
+        usdt_id,
         "💱 USDT/AED — Продажа USDT",
         reverse=True
     )
