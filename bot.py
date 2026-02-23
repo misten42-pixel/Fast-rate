@@ -48,12 +48,20 @@ async def get_abcex(session):
 
             data = await response.json()
 
-        # Иногда структура вложена в data
-        if "data" in data:
-            data = data["data"]
+        # Универсальное извлечение стакана
+        orderbook = None
 
-        bids = data.get("bids", [])
-        asks = data.get("asks", [])
+        if "data" in data:
+            if isinstance(data["data"], dict):
+                orderbook = data["data"]
+            elif isinstance(data["data"], list) and len(data["data"]) > 0:
+                orderbook = data["data"][0]
+
+        if not orderbook:
+            return "🟣 ABCEX: нет данных"
+
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
 
         if not bids or not asks:
             return "🟣 ABCEX: нет данных"
