@@ -152,7 +152,6 @@ async def get_bestchange(session):
             exch_root = ET.fromstring(exch_xml)
             curr_root = ET.fromstring(curr_xml)
 
-            # --- Находим ID валют ---
             usdt_id = None
             aed_id = None
 
@@ -160,13 +159,16 @@ async def get_bestchange(session):
                 name = item.find("name").text.lower()
                 cid = item.find("id").text
 
-                if "tether trc20" in name:
+                # --- ищем TRC20 ---
+                if "trc20" in name and "tether" in name:
                     usdt_id = cid
 
-                if "aed" in name or "dirham" in name:
+                # --- ищем AED наличные ---
+                if "aed" in name and ("cash" in name or "dirham" in name):
                     aed_id = cid
 
             if not usdt_id or not aed_id:
+                logging.warning("Currency IDs not found")
                 continue
 
             exchangers = {
