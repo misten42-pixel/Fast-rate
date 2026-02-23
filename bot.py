@@ -9,82 +9,86 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-UA = "Mozilla/5.0"
 TIMEOUT = 10
 
 
-# ---------------- GRINEX ----------------
+# ===================== GRINEX =====================
 def fetch_grinex():
     try:
         url = "https://grinex.io/rates?offset=0"
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        r = requests.get(url, timeout=TIMEOUT)
         data = r.json()
 
         pair = data.get("usdta7a5")
-        if pair:
-            return {
-                "buy_price": float(pair["sell"]),   # покупка USDT
-                "buy_volume": None,
-                "sell_price": float(pair["buy"]),   # продажа USDT
-                "sell_volume": None,
-            }
-        return None
+        if not pair:
+            return None
+
+        return {
+            "buy_price": float(pair["sell"]),
+            "buy_volume": None,
+            "sell_price": float(pair["buy"]),
+            "sell_volume": None,
+        }
+
     except Exception as e:
         logging.warning(f"Grinex error: {e}")
         return None
 
 
-# ---------------- RAPIRA ----------------
+# ===================== RAPIRA =====================
 def fetch_rapira():
     try:
         url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        r = requests.get(url, timeout=TIMEOUT)
         data = r.json()
 
-        asks = data.get("asks", [])
-        bids = data.get("bids", [])
+        asks = data["data"]["ask"]
+        bids = data["data"]["bid"]
 
-        if asks and bids:
-            return {
-                "buy_price": float(asks[0][0]),
-                "buy_volume": float(asks[0][1]),
-                "sell_price": float(bids[0][0]),
-                "sell_volume": float(bids[0][1]),
-            }
-        return None
+        if not asks or not bids:
+            return None
+
+        return {
+            "buy_price": float(asks[0][0]),
+            "buy_volume": float(asks[0][1]),
+            "sell_price": float(bids[0][0]),
+            "sell_volume": float(bids[0][1]),
+        }
+
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
         return None
 
 
-# ---------------- ABCEX ----------------
+# ===================== ABCEX =====================
 def fetch_abcex():
     try:
         url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?pairCode=USDTRUB"
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        r = requests.get(url, timeout=TIMEOUT)
         data = r.json()
 
-        book = data.get("data", {})
-        asks = book.get("asks", [])
-        bids = book.get("bids", [])
+        asks = data["data"]["ask"]
+        bids = data["data"]["bid"]
 
-        if asks and bids:
-            return {
-                "buy_price": float(asks[0][0]),
-                "buy_volume": float(asks[0][1]),
-                "sell_price": float(bids[0][0]),
-                "sell_volume": float(bids[0][1]),
-            }
-        return None
+        if not asks or not bids:
+            return None
+
+        return {
+            "buy_price": float(asks[0][0]),
+            "buy_volume": float(asks[0][1]),
+            "sell_price": float(bids[0][0]),
+            "sell_volume": float(bids[0][1]),
+        }
+
     except Exception as e:
         logging.warning(f"ABCEX error: {e}")
         return None
 
 
-# ---------------- FORMAT ----------------
+# ===================== FORMAT =====================
 def format_exchange(name, data):
     if not data:
-        return f"{name}: — / —"
+        return f"{name}: — / —\n"
 
     buy_price = f"{data['buy_price']:.2f}"
     sell_price = f"{data['sell_price']:.2f}"
@@ -95,18 +99,20 @@ def format_exchange(name, data):
     return (
         f"{name}\n"
         f"  Покупка: {buy_price} ({buy_vol} USDT)\n"
-        f"  Продажа: {sell_price} ({sell_vol} USDT)\n"
+        f"  Продажа: {sell_price} ({sell_vol} USDT)\n\n"
     )
 
 
-# ---------------- KEYBOARD ----------------
+# ===================== KEYBOARD =====================
 def keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="📈 Курс", callback_data="rates")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📈 Курс", callback_data="rates")]
+        ]
     )
 
 
-# ---------------- BOT ----------------
+# ===================== BOT =====================
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
@@ -117,7 +123,7 @@ async def main():
 
     @dp.callback_query(F.data == "rates")
     async def rates(cb: CallbackQuery):
-        await cb.answer("Обновляю…")
+        await cb.answer("Обновляю...")
 
         loop = asyncio.get_running_loop()
 
@@ -127,14 +133,14 @@ async def main():
 
         text = (
             "📊 USDT/RUB — топ стакана\n\n"
-            + format_exchange("🟩 Grinex", grinex) + "\n"
-            + format_exchange("🟥 Rapira", rapira) + "\n"
+            + format_exchange("🟩 Grinex", grinex)
+            + format_exchange("🟥 Rapira", rapira)
             + format_exchange("🟨 ABCEX", abcex)
         )
 
         await cb.message.answer(text, reply_markup=keyboard())
 
-    # ВАЖНО: убирает конфликт polling
+    # предотвращает конфликт polling
     await dp.start_polling(bot, drop_pending_updates=True)
 
 
