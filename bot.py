@@ -135,48 +135,40 @@ from bs4 import BeautifulSoup
 
 
 async def parse_bestchange(session, url):
-    async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
+    async with session.get(
+        url,
+        proxy=PROXY_URL,
+        headers=HEADERS,
+        timeout=20
+    ) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
 
-    rows = soup.select("table#content_table tbody tr")
+    table = soup.find("table", id="content_table")
+    if not table:
+        raise Exception("Table not found")
+
+    rows = table.find("tbody").find_all("tr")
 
     results = []
 
     for row in rows[:3]:
-        name = row.select_one(".bj").text.strip()
-        rate = row.select_one(".fs").text.strip()
-        reserve = row.select_one(".ar").text.strip()
+        try:
+            name = row.find("a", class_="bj").text.strip()
 
-        results.append(f"{name} — {rate} — резерв: {reserve}")
+            # 🔥 вот ключевой момент
+            rate_cell = row.find("div", class_="fm") or row.find("div", class_="fs")
+            rate = rate_cell.text.strip()
+
+            reserve = row.find("div", class_="ar").text.strip()
+
+            results.append(f"{name} — {rate} — резерв: {reserve}")
+
+        except:
+            continue
 
     return results
-
-
-async def get_bestchange(session):
-    try:
-        buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
-        sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
-
-        buy_list = await parse_bestchange(session, buy_url)
-        sell_list = await parse_bestchange(session, sell_url)
-
-        text = "💱 USDT/AED\n\n"
-
-        text += "🔴 Продажа USDT\n"
-        for i, item in enumerate(sell_list, 1):
-            text += f"{i}. {item}\n"
-
-        text += "\n🟢 Покупка USDT\n"
-        for i, item in enumerate(buy_list, 1):
-            text += f"{i}. {item}\n"
-
-        return text
-
-    except Exception as e:
-        logging.warning(f"BestChange parsing error: {e}")
-        return "💱 USDT/AED: нет данных"
 
 
 # ================= TELEGRAM =================
