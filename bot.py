@@ -126,6 +126,10 @@ async def get_grinex(session):
 
 # ================= BESTCHANGE PUBLIC MIRRORS =================async def get_bestchange(session):
 
+    async def get_bestchange(session):
+
+    proxy = os.getenv("PROXY_URL")
+
     urls = [
         "http://mirror1.bestchange.app/info.zip",
         "http://mirror2.bestchange.app/info.zip",
@@ -142,7 +146,13 @@ async def get_grinex(session):
 
     for url in urls:
         try:
-            async with session.get(url, headers=headers, timeout=12) as response:
+            async with session.get(
+                url,
+                headers=headers,
+                timeout=15,
+                proxy=proxy  # ← ВОТ ОНО
+            ) as response:
+
                 if response.status != 200:
                     continue
 
@@ -157,7 +167,6 @@ async def get_grinex(session):
             exch_root = ET.fromstring(exch_xml)
             curr_root = ET.fromstring(curr_xml)
 
-            # --- найдём ID динамически ---
             usdt_id = None
             aed_id = None
 
@@ -202,10 +211,10 @@ async def get_grinex(session):
                 return text.strip()
 
         except Exception as e:
-            logging.warning(f"BestChange mirror failed: {e}")
+            logging.warning(f"BestChange proxy error: {e}")
             continue
 
-    return "💱 USDT/AED: сервер BestChange не отвечает"
+    return "💱 USDT/AED: нет данных"
 
 
 # ================= TELEGRAM =================
