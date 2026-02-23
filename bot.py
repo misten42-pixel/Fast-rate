@@ -145,23 +145,19 @@ async def parse_bestchange(session, url):
 
     soup = BeautifulSoup(html, "html.parser")
 
-    table = soup.find("table", id="content_table")
-    if not table:
-        raise Exception("Table not found")
-
-    rows = table.find("tbody").find_all("tr")
+    rows = soup.select("table#content_table tbody tr")
 
     results = []
 
     for row in rows[:3]:
         try:
-            name = row.find("a", class_="bj").text.strip()
+            name = row.select_one(".bj").get_text(strip=True)
 
-            # 🔥 вот ключевой момент
-            rate_cell = row.find("div", class_="fm") or row.find("div", class_="fs")
-            rate = rate_cell.text.strip()
+            # 🔥 Берём правильную колонку курса
+            rate_block = row.select_one(".fs") or row.select_one(".fm")
+            rate = rate_block.get_text(strip=True)
 
-            reserve = row.find("div", class_="ar").text.strip()
+            reserve = row.select_one(".ar").get_text(strip=True)
 
             results.append(f"{name} — {rate} — резерв: {reserve}")
 
