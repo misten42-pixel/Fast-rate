@@ -156,11 +156,13 @@ def extract_rate_from_fs(row):
 
 
 async def parse_sell(session, url):
-    async with session.get(url,
-                           proxy=PROXY_URL,
-                           headers=HEADERS,
-                           cookies=COOKIES,
-                           timeout=15) as response:
+    async with session.get(
+        url,
+        proxy=PROXY_URL,
+        headers=HEADERS,
+        cookies=COOKIES,
+        timeout=15
+    ) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
@@ -169,16 +171,22 @@ async def parse_sell(session, url):
     results = []
 
     for row in rows[:3]:
-        name_tag = row.select_one(".bj")
-        fs_blocks = row.select(".fs")
-
-        if not name_tag or len(fs_blocks) < 2:
+        cells = row.find_all("td")
+        if len(cells) < 3:
             continue
 
-        # В продаже второй .fs — это колонка "Получаете"
-        rate = fs_blocks[1].get_text(strip=True)
+        name_tag = row.select_one(".bj")
+
+        # В продаже курс в колонке "Отдаете"
+        give_cell = cells[2]
+        rate_tag = give_cell.select_one(".fs")
+
+        if not name_tag or not rate_tag:
+            continue
 
         name = name_tag.get_text(strip=True)
+        rate = rate_tag.get_text(strip=True)
+
         results.append(f"{name} — {rate}")
 
     return results
