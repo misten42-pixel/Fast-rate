@@ -131,19 +131,52 @@ async def get_grinex(session):
 
 
 # ================= BESTCHANGE (proxy test) =================
+from bs4 import BeautifulSoup
+
+
+async def parse_bestchange(session, url):
+    async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
+        html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    rows = soup.select("table#content_table tbody tr")
+
+    results = []
+
+    for row in rows[:3]:
+        name = row.select_one(".bj").text.strip()
+        rate = row.select_one(".fs").text.strip()
+        reserve = row.select_one(".ar").text.strip()
+
+        results.append(f"{name} — {rate} — резерв: {reserve}")
+
+    return results
+
+
 async def get_bestchange(session):
     try:
-        url = "https://mirror1.bestchange.app/"
+        buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
+        sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        async with session.get(url, proxy=PROXY_URL, timeout=10) as response:
-            if response.status == 200:
-                return "💱 USDT/AED: соединение есть (API подключено)"
+        buy_list = await parse_bestchange(session, buy_url)
+        sell_list = await parse_bestchange(session, sell_url)
 
-        return "💱 USDT/AED: нет данных"
+        text = "💱 USDT/AED\n\n"
+
+        text += "🔴 Продажа USDT\n"
+        for i, item in enumerate(sell_list, 1):
+            text += f"{i}. {item}\n"
+
+        text += "\n🟢 Покупка USDT\n"
+        for i, item in enumerate(buy_list, 1):
+            text += f"{i}. {item}\n"
+
+        return text
 
     except Exception as e:
-        logging.warning(f"BestChange error: {e}")
-        return "💱 USDT/AED: ошибка подключения"
+        logging.warning(f"BestChange parsing error: {e}")
+        return "💱 USDT/AED: нет данных"
 
 
 # ================= TELEGRAM =================
