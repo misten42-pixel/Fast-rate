@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import os
 import aiohttp
 import xml.etree.ElementTree as ET
@@ -179,13 +180,18 @@ async def parse_sell(session, url):
         if not name_tag:
             continue
 
-        name = name_tag.get_text(strip=True)
+        # чистое имя без лишнего текста
+        name = name_tag.find(text=True, recursive=False).strip()
 
-        full_text = row.get_text(" | ", strip=True)
+        text = row.get_text(" ", strip=True)
+        numbers = re.findall(r"\d+\.\d+", text)
 
-        numbers = re.findall(r"\d+\.\d+", full_text)
+        if not numbers:
+            continue
 
-        results.append(f"{name} | RAW: {full_text} | FOUND: {numbers}")
+        rate = numbers[0]
+
+        results.append(f"{name} — {rate}")
 
     return results
 
