@@ -23,9 +23,9 @@ def fetch_grinex():
         pair = data.get("usdta7a5")
         if pair:
             return {
-                "buy_price": float(pair["sell"]),   # ты покупаешь USDT
+                "buy_price": float(pair["sell"]),   # покупка USDT
                 "buy_volume": None,
-                "sell_price": float(pair["buy"]),   # ты продаёшь USDT
+                "sell_price": float(pair["buy"]),   # продажа USDT
                 "sell_volume": None,
             }
         return None
@@ -134,7 +134,8 @@ async def main():
 
         await cb.message.answer(text, reply_markup=keyboard())
 
-    await dp.start_polling(bot)
+    # ВАЖНО: убирает конфликт polling
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
