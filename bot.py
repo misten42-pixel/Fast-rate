@@ -21,59 +21,85 @@ async def get_rapira(session):
 
             data = await response.json()
 
-        markets = data.get("data", [])
-
-        for market in markets:
+        for market in data.get("data", []):
             if market.get("symbol") == "USDT/RUB":
                 bid = float(market.get("bidPrice", 0))
                 ask = float(market.get("askPrice", 0))
-
                 return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
-        return "🔵 Rapira: пара не найдена"
+        return "🔵 Rapira: нет данных"
 
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
         return "🔵 Rapira: ошибка"
 
 
-# ================= ABCEX (REAL ORDERBOOK) =================
+# ================= ABCEX (HYBRID) =================
 async def get_abcex(session):
-    url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
+    depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
+    rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
 
-    for attempt in range(2):  # 2 попытки
-        try:
-            async with session.get(url, timeout=10) as response:
-                if response.status != 200:
-                    continue
-
+    # --- Сначала пробуем стакан ---
+    try:
+        async with session.get(depth_url, timeout=10) as response:
+            if response.status == 200:
                 data = await response.json()
 
-            # Возможные варианты структуры
-            if "data" in data:
-                if isinstance(data["data"], dict):
-                    orderbook = data["data"]
-                elif isinstance(data["data"], list) and len(data["data"]) > 0:
-                    orderbook = data["data"][0]
+                if "data" in data:
+                    if isinstance(data["data"], dict):
+                        orderbook = data["data"]
+                    elif isinstance(data["data"], list) and len(data["data"]) > 0:
+                        orderbook = data["data"][0]
+                    else:
+                        orderbook = None
                 else:
-                    continue
-            else:
-                orderbook = data
+                    orderbook = data
 
-            bids = orderbook.get("bids", [])
-            asks = orderbook.get("asks", [])
+                if orderbook:
+                    bids = orderbook.get("bids", [])
+                    asks = orderbook.get("asks", [])
 
-            if bids and asks:
-                best_bid = float(bids[0][0])
-                best_ask = float(asks[0][0])
-                return f"🟣 ABCEX\nBid: {best_bid:.2f}\nAsk: {best_ask:.2f}"
+                    if bids and asks:
+                        best_bid = float(bids[0][0])
+                        best_ask = float(asks[0][0])
+                        return f"🟣 ABCEX\nBid: {best_bid:.2f}\nAsk: {best_ask:.2f}"
 
-        except Exception:
-            continue
+    except Exception:
+        pass
 
-        await asyncio.sleep(1)
+    # --- Если стакан не дал данные → fallback на rates ---
+    try:
+        async with session.get(rates_url, timeout=10) as response:
+            if response.status != 200:
+                return "🟣 ABCEX: временно недоступен"
 
-    return "🟣 ABCEX: временно недоступен"
+            text = await response.text()
+
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(text)
+
+        bid = None
+        ask = None
+
+        for item in root.findall(".//item"):
+            from_currency = item.find("from")
+            to_currency = item.find("to")
+            out_value = item.find("out")
+
+            if from_currency is not None and to_currency is not None:
+                if from_currency.text == "USDT" and to_currency.text == "RUB":
+                    ask = float(out_value.text)
+                if from_currency.text == "RUB" and to_currency.text == "USDT":
+                    bid = round(1 / float(out_value.text), 2)
+
+        if bid and ask:
+            return f"🟣 ABCEX (rates)\nBid: {bid:.2f}\nAsk: {ask:.2f}"
+
+        return "🟣 ABCEX: временно недоступен"
+
+    except Exception:
+        return "🟣 ABCEX: временно недоступен"
+
 
 # ================= GRINEX =================
 async def get_grinex(session):
@@ -88,13 +114,12 @@ async def get_grinex(session):
 
         pair = data.get("usdta7a5")
 
-        if not pair:
-            return "🟢 Grinex: нет данных"
+        if pair:
+            bid = float(pair.get("buy", 0))
+            ask = float(pair.get("sell", 0))
+            return f"🟢 Grinex\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
-        bid = float(pair.get("buy", 0))
-        ask = float(pair.get("sell", 0))
-
-        return f"🟢 Grinex\nBid: {bid:.2f}\nAsk: {ask:.2f}"
+        return "🟢 Grinex: нет данных"
 
     except Exception as e:
         logging.warning(f"Grinex error: {e}")
