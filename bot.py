@@ -156,7 +156,8 @@ def extract_rate_from_fs(row):
 
 
 async def parse_sell(session, url):
-    async with session.get(url, proxy=PROXY_URL,
+    async with session.get(url,
+                           proxy=PROXY_URL,
                            headers=HEADERS,
                            cookies=COOKIES,
                            timeout=15) as response:
@@ -168,20 +169,19 @@ async def parse_sell(session, url):
     results = []
 
     for row in rows[:3]:
-        name_tag = row.select_one(".bj")
-        fs_blocks = row.select(".fs")
+        cells = row.find_all("td")
+        if len(cells) < 4:
+            continue
 
-        rate = None
-        for fs in fs_blocks:
-            text = fs.get_text(strip=True)
-            if "." in text and text.replace(".", "").isdigit():
-                rate = text
-                break
+        name_tag = cells[1].select_one(".bj")
+        rate_tag = cells[3].select_one(".fs")  # <-- строго колонка "Получаете"
 
-        if not name_tag or not rate:
+        if not name_tag or not rate_tag:
             continue
 
         name = name_tag.get_text(strip=True)
+        rate = rate_tag.get_text(strip=True)
+
         results.append(f"{name} — {rate}")
 
     return results
