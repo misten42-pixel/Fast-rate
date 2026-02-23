@@ -46,9 +46,8 @@ async def get_abcex(session):
     depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
     rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
 
-    # 1️⃣ Пытаемся стакан
     try:
-        async with session.get(depth_url, timeout=10) as response:
+        async with session.get(depth_url, proxy=PROXY_URL, timeout=10) as response:
             if response.status == 200:
                 data = await response.json()
                 orderbook = data.get("data", data)
@@ -65,12 +64,11 @@ async def get_abcex(session):
                         f"🔴 Продажа: {sell:.2f}\n"
                         f"🟢 Покупка: {buy:.2f}"
                     )
-    except Exception as e:
-        logging.warning(f"ABCEX depth error: {e}")
+    except Exception:
+        pass
 
-    # 2️⃣ fallback XML rates
     try:
-        async with session.get(rates_url, timeout=10) as response:
+        async with session.get(rates_url, proxy=PROXY_URL, timeout=10) as response:
             text = await response.text()
 
         root = ET.fromstring(text)
@@ -98,8 +96,7 @@ async def get_abcex(session):
 
         return "🔵 ABCEX: временно недоступен"
 
-    except Exception as e:
-        logging.warning(f"ABCEX rates error: {e}")
+    except Exception:
         return "🔵 ABCEX: временно недоступен"
 
 
