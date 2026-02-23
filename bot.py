@@ -130,51 +130,87 @@ async def get_grinex(session):
         return "🟠 Grinex: ошибка"
 
 
-# ================= BESTCHANGE (proxy test) =================
+# ================= BESTCHANGE (Dubai fixed) =================
 from bs4 import BeautifulSoup
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept-Language": "ru-RU,ru;q=0.9",
+}
 
-async def parse_bestchange(session, url, is_buy=False):
-    async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
+COOKIES = {
+    "city": "Dubai"
+}
+
+
+# ---------- 🔴 Продажа USDT ----------
+async def parse_sell(session, url):
+    async with session.get(
+        url,
+        proxy=PROXY_URL,
+        headers=HEADERS,
+        cookies=COOKIES,
+        timeout=15
+    ) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
-
     rows = soup.select("table#content_table tbody tr")
 
     results = []
 
     for row in rows[:3]:
-        try:
-            cells = row.find_all("td")
-            if len(cells) < 5:
-                continue
-
-            name = cells[0].get_text(strip=True)
-
-            if is_buy:
-                # 🔥 берём правильную колонку
-                rate = cells[2].get_text(strip=True)
-            else:
-                rate = cells[1].get_text(strip=True)
-
-            reserve = cells[4].get_text(strip=True)
-
-            results.append(f"{name} — {rate} — резерв: {reserve}")
-
-        except:
+        cells = row.find_all("td")
+        if len(cells) < 4:
             continue
+
+        name = cells[0].get_text(strip=True)
+        rate = cells[2].get_text(strip=True)      # Получаете AED
+        reserve = cells[3].get_text(strip=True)
+
+        results.append(f"{name} — {rate} — резерв: {reserve}")
 
     return results
 
 
+# ---------- 🟢 Покупка USDT ----------
+async def parse_buy(session, url):
+    async with session.get(
+        url,
+        proxy=PROXY_URL,
+        headers=HEADERS,
+        cookies=COOKIES,
+        timeout=15
+    ) as response:
+        html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("table#content_table tbody tr")
+
+    results = []
+
+    for row in rows[:3]:
+        cells = row.find_all("td")
+        if len(cells) < 5:
+            continue
+
+        name = cells[0].get_text(strip=True)
+        rate = cells[1].get_text(strip=True)      # Отдаёте AED
+        reserve = cells[4].get_text(strip=True)
+
+        results.append(f"{name} — {rate} — резерв: {reserve}")
+
+    return results
+
+
+# ---------- 💱 Общая функция ----------
 async def get_bestchange(session):
     try:
-        buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
         sell_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
+        buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        sell_list = await parse_bestchange(session, sell_url, is_buy=False)
-        buy_list = await parse_bestchange(session, buy_url, is_buy=True)
+        sell_list = await parse_sell(session, sell_url)
+        buy_list = await parse_buy(session, buy_url)
 
         if not sell_list and not buy_list:
             return "💱 USDT/AED: нет данных"
