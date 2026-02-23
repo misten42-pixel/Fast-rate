@@ -153,11 +153,10 @@ async def parse_bestchange(session, url, is_buy=False):
             name = cells[0].get_text(strip=True)
 
             if is_buy:
-                # 🔥 курс AED находится во второй колонке
-                rate = cells[1].get_text(strip=True)
-            else:
-                # 🔥 для продажи — третья колонка
+                # 🔥 берём правильную колонку
                 rate = cells[2].get_text(strip=True)
+            else:
+                rate = cells[1].get_text(strip=True)
 
             reserve = cells[4].get_text(strip=True)
 
