@@ -1,10 +1,7 @@
 import os
-import re
 import asyncio
 import logging
 import requests
-from dataclasses import dataclass
-from typing import Optional
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -12,92 +9,107 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 UA = "Mozilla/5.0"
-TIMEOUT = 15
+TIMEOUT = 10
 
-@dataclass
-class Rate:
-    buy: Optional[float]
-    sell: Optional[float]
 
-def fmt(x):
-    return "—" if x is None else f"{x:.2f}"
-
-# --------------------------------------------------
-# Универсальный HTML-парсер (ищет первые 2 цены 70-100)
-# --------------------------------------------------
-def extract_prices_from_html(html: str) -> Rate:
-    prices = re.findall(r"\d{2,3}\.\d{2}", html)
-
-    filtered = []
-    for p in prices:
-        try:
-            value = float(p)
-            if 60 < value < 120:  # разумный диапазон для USDT/RUB
-                filtered.append(value)
-        except:
-            pass
-
-    if len(filtered) >= 2:
-        buy = max(filtered[0], filtered[1])
-        sell = min(filtered[0], filtered[1])
-        return Rate(buy, sell)
-
-    return Rate(None, None)
-
-# --------------------------------------------------
-# GRINEX
-# --------------------------------------------------
+# ---------------- GRINEX ----------------
 def fetch_grinex():
     try:
-        r = requests.get(
-            "https://grinex.io/trading/usdta7a5",
-            timeout=TIMEOUT,
-            headers={"User-Agent": UA}
-        )
-        return extract_prices_from_html(r.text)
-    except Exception as e:
-        logging.error(f"Grinex error: {e}")
-        return Rate(None, None)
+        url = "https://grinex.io/rates?offset=0"
+        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        data = r.json()
 
-# --------------------------------------------------
-# RAPIRA
-# --------------------------------------------------
+        pair = data.get("usdta7a5")
+        if pair:
+            buy_price = float(pair["sell"])  # ты покупаешь USDT
+            sell_price = float(pair["buy"])  # ты продаёшь USDT
+
+            return {
+                "buy_price": buy_price,
+                "buy_volume": None,
+                "sell_price": sell_price,
+                "sell_volume": None,
+            }
+
+        return None
+    except Exception as e:
+        logging.warning(f"Grinex error: {e}")
+        return None
+
+
+# ---------------- RAPIRA ----------------
 def fetch_rapira():
     try:
-        r = requests.get(
-            "https://rapira.net/exchange/USDT_RUB",
-            timeout=TIMEOUT,
-            headers={"User-Agent": UA}
-        )
-        return extract_prices_from_html(r.text)
-    except Exception as e:
-        logging.error(f"Rapira error: {e}")
-        return Rate(None, None)
+        url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
+        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        data = r.json()
 
-# --------------------------------------------------
-# ABCEX (mobile версия)
-# --------------------------------------------------
+        asks = data.get("data", {}).get("asks", [])
+        bids = data.get("data", {}).get("bids", [])
+
+        if asks and bids:
+            return {
+                "buy_price": float(asks[0][0]),
+                "buy_volume": float(asks[0][1]),
+                "sell_price": float(bids[0][0]),
+                "sell_volume": float(bids[0][1]),
+            }
+
+        return None
+    except Exception as e:
+        logging.warning(f"Rapira error: {e}")
+        return None
+
+
+# ---------------- ABCEX ----------------
 def fetch_abcex():
     try:
-        r = requests.get(
-            "https://m.abcex.io/spot/USDTRUB/view/open-orders",
-            timeout=TIMEOUT,
-            headers={"User-Agent": UA}
-        )
-        return extract_prices_from_html(r.text)
-    except Exception as e:
-        logging.error(f"ABCEX error: {e}")
-        return Rate(None, None)
+        url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?pairCode=USDTRUB"
+        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": UA})
+        data = r.json()
 
-# --------------------------------------------------
-# BOT
-# --------------------------------------------------
+        asks = data.get("asks", [])
+        bids = data.get("bids", [])
+
+        if asks and bids:
+            return {
+                "buy_price": float(asks[0][0]),
+                "buy_volume": float(asks[0][1]),
+                "sell_price": float(bids[0][0]),
+                "sell_volume": float(bids[0][1]),
+            }
+
+        return None
+    except Exception as e:
+        logging.warning(f"ABCEX error: {e}")
+        return None
+
+
+# ---------------- FORMAT ----------------
+def format_exchange(name, data):
+    if not data:
+        return f"{name}: — / —"
+
+    buy = f"{data['buy_price']:.2f}"
+    sell = f"{data['sell_price']:.2f}"
+
+    buy_vol = f"{data['buy_volume']:.2f}" if data["buy_volume"] else "—"
+    sell_vol = f"{data['sell_volume']:.2f}" if data["sell_volume"] else "—"
+
+    return (
+        f"{name}\n"
+        f"  Покупка: {buy} ({buy_vol} USDT)\n"
+        f"  Продажа: {sell} ({sell_vol} USDT)\n"
+    )
+
+
+# ---------------- BOT ----------------
 def keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="📈 Курс", callback_data="rates")]]
     )
+
 
 async def main():
     bot = Bot(BOT_TOKEN)
@@ -118,15 +130,16 @@ async def main():
         abcex = await loop.run_in_executor(None, fetch_abcex)
 
         text = (
-            "📊 USDT/RUB — покупка / продажа\n\n"
-            f"🟩 Grinex: {fmt(grinex.buy)} / {fmt(grinex.sell)}\n"
-            f"🟥 Rapira: {fmt(rapira.buy)} / {fmt(rapira.sell)}\n"
-            f"🟨 ABCEX: {fmt(abcex.buy)} / {fmt(abcex.sell)}"
+            "📊 USDT/RUB — топ стакана\n\n"
+            + format_exchange("🟩 Grinex", grinex) + "\n"
+            + format_exchange("🟥 Rapira", rapira) + "\n"
+            + format_exchange("🟨 ABCEX", abcex)
         )
 
         await cb.message.answer(text, reply_markup=keyboard())
 
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
