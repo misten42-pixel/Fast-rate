@@ -132,6 +132,7 @@ async def get_grinex(session):
 
 # ================= BESTCHANGE (Dubai fixed) =================
 from bs4 import BeautifulSoup
+import re
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -141,6 +142,17 @@ HEADERS = {
 COOKIES = {
     "city": "Dubai"
 }
+
+
+def extract_rate_from_fs(row):
+    fs_blocks = row.select(".fs")
+
+    for fs in fs_blocks:
+        text = fs.get_text(strip=True)
+        if re.search(r"\d+\.\d+", text):   # ищем число типа 3.662900
+            return text
+
+    return None
 
 
 async def parse_sell(session, url):
@@ -157,14 +169,12 @@ async def parse_sell(session, url):
 
     for row in rows[:3]:
         name_tag = row.select_one(".bj")
-        rate_tag = row.select_one(".fm")   # ← ВАЖНО
+        rate = extract_rate_from_fs(row)
 
-        if not name_tag or not rate_tag:
+        if not name_tag or not rate:
             continue
 
         name = name_tag.get_text(strip=True)
-        rate = rate_tag.get_text(strip=True)
-
         results.append(f"{name} — {rate}")
 
     return results
@@ -184,14 +194,12 @@ async def parse_buy(session, url):
 
     for row in rows[:3]:
         name_tag = row.select_one(".bj")
-        rate_tag = row.select_one(".fs")   # ← Покупка
+        rate = extract_rate_from_fs(row)
 
-        if not name_tag or not rate_tag:
+        if not name_tag or not rate:
             continue
 
         name = name_tag.get_text(strip=True)
-        rate = rate_tag.get_text(strip=True)
-
         results.append(f"{name} — {rate}")
 
     return results
