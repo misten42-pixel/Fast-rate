@@ -156,12 +156,8 @@ async def parse_sell(session, url):
     results = []
 
     for row in rows[:3]:
-        cells = row.find_all("td")
-        if len(cells) < 3:
-            continue
-
         name_tag = row.select_one(".bj")
-        rate_tag = cells[2].select_one("span")  # Получаете AED
+        rate_tag = row.select_one(".fm")   # ← ВАЖНО
 
         if not name_tag or not rate_tag:
             continue
@@ -188,7 +184,7 @@ async def parse_buy(session, url):
 
     for row in rows[:3]:
         name_tag = row.select_one(".bj")
-        rate_tag = row.select_one(".fs")  # Работает для покупки
+        rate_tag = row.select_one(".fs")   # ← Покупка
 
         if not name_tag or not rate_tag:
             continue
