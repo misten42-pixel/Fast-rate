@@ -40,28 +40,66 @@ async def get_rapira(session):
         return "🟦 Rapira: ошибка"
 
 
-# ================= ABCEX =================
+# ================= ABCEX HYBRID =================
 async def get_abcex(session):
-    url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
 
+    depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
+    rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
+
+    # 1️⃣ Пытаемся стакан
     try:
-        async with session.get(url, timeout=10) as response:
-            data = await response.json()
+        async with session.get(depth_url, timeout=10) as response:
+            if response.status == 200:
+                data = await response.json()
+                orderbook = data.get("data", data)
 
-        bids = data["data"]["bids"]
-        asks = data["data"]["asks"]
+                bids = orderbook.get("bids", [])
+                asks = orderbook.get("asks", [])
 
-        buy = float(bids[0][0])
-        sell = float(asks[0][0])
+                if bids and asks:
+                    buy = float(bids[0][0])
+                    sell = float(asks[0][0])
 
-        return (
-            "🔵 ABCEX\n\n"
-            f"🔴 Продажа: {sell:.2f}\n"
-            f"🟢 Покупка: {buy:.2f}"
-        )
+                    return (
+                        "🔵 ABCEX\n\n"
+                        f"🔴 Продажа: {sell:.2f}\n"
+                        f"🟢 Покупка: {buy:.2f}"
+                    )
+    except Exception as e:
+        logging.warning(f"ABCEX depth error: {e}")
+
+    # 2️⃣ fallback XML rates
+    try:
+        async with session.get(rates_url, timeout=10) as response:
+            text = await response.text()
+
+        root = ET.fromstring(text)
+
+        buy = None
+        sell = None
+
+        for item in root.findall(".//item"):
+            from_currency = item.find("from")
+            to_currency = item.find("to")
+            out_value = item.find("out")
+
+            if from_currency is not None and to_currency is not None:
+                if from_currency.text == "USDT" and to_currency.text == "RUB":
+                    sell = float(out_value.text)
+                if from_currency.text == "RUB" and to_currency.text == "USDT":
+                    buy = round(1 / float(out_value.text), 2)
+
+        if buy and sell:
+            return (
+                "🔵 ABCEX (rates)\n\n"
+                f"🔴 Продажа: {sell:.2f}\n"
+                f"🟢 Покупка: {buy:.2f}"
+            )
+
+        return "🔵 ABCEX: временно недоступен"
 
     except Exception as e:
-        logging.warning(f"ABCEX error: {e}")
+        logging.warning(f"ABCEX rates error: {e}")
         return "🔵 ABCEX: временно недоступен"
 
 
@@ -74,6 +112,9 @@ async def get_grinex(session):
             data = await response.json()
 
         pair = data.get("usdta7a5")
+
+        if not pair:
+            return "🟠 Grinex: нет данных"
 
         buy = float(pair.get("buy", 0))
         sell = float(pair.get("sell", 0))
@@ -89,18 +130,16 @@ async def get_grinex(session):
         return "🟠 Grinex: ошибка"
 
 
-# ================= BESTCHANGE (через proxy) =================
+# ================= BESTCHANGE (proxy test) =================
 async def get_bestchange(session):
     try:
-        proxy = PROXY_URL
+        url = "https://mirror1.bestchange.app/"
 
-        url = "https://mirror1.bestchange.app/v2/"
+        async with session.get(url, proxy=PROXY_URL, timeout=10) as response:
+            if response.status == 200:
+                return "💱 USDT/AED: соединение есть (API подключено)"
 
-        async with session.get(url, proxy=proxy, timeout=10) as response:
-            if response.status != 200:
-                return "💱 USDT/AED: нет данных"
-
-        return "💱 USDT/AED: соединение есть (API подключено)"
+        return "💱 USDT/AED: нет данных"
 
     except Exception as e:
         logging.warning(f"BestChange error: {e}")
