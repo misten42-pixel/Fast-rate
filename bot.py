@@ -11,12 +11,33 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TIMEOUT = 10
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept": "application/json"
+}
+
+
+# ================= SAFE REQUEST =================
+def safe_get(url):
+    r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+
+    if r.status_code != 200:
+        logging.warning(f"{url} returned {r.status_code}")
+        return None
+
+    if "application/json" not in r.headers.get("Content-Type", ""):
+        logging.warning(f"{url} did not return JSON")
+        return None
+
+    return r.json()
+
 
 # ================= GRINEX =================
 def fetch_grinex():
     try:
-        r = requests.get("https://grinex.io/rates?offset=0", timeout=TIMEOUT)
-        data = r.json()
+        data = safe_get("https://grinex.io/rates?offset=0")
+        if not data:
+            return None
 
         pair = data.get("usdta7a5")
         if not pair:
@@ -37,20 +58,19 @@ def fetch_grinex():
 # ================= RAPIRA =================
 def fetch_rapira():
     try:
-        r = requests.get(
-            "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB",
-            timeout=TIMEOUT,
+        data = safe_get(
+            "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
         )
-        data = r.json()
+        if not data:
+            return None
 
-        # иногда данные лежат прямо в корне
+        # разные возможные структуры
         asks = data.get("ask") or data.get("asks")
         bids = data.get("bid") or data.get("bids")
 
-        # иногда внутри data
         if not asks and "data" in data:
-            asks = data["data"].get("ask")
-            bids = data["data"].get("bid")
+            asks = data["data"].get("ask") or data["data"].get("asks")
+            bids = data["data"].get("bid") or data["data"].get("bids")
 
         if not asks or not bids:
             return None
@@ -70,11 +90,11 @@ def fetch_rapira():
 # ================= ABCEX =================
 def fetch_abcex():
     try:
-        r = requests.get(
-            "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?pairCode=USDTRUB",
-            timeout=TIMEOUT,
+        data = safe_get(
+            "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?pairCode=USDTRUB"
         )
-        data = r.json()
+        if not data:
+            return None
 
         asks = data.get("ask") or data.get("asks")
         bids = data.get("bid") or data.get("bids")
@@ -103,25 +123,17 @@ def format_exchange(name, data):
     if not data:
         return f"{name}: — / —\n"
 
-    buy_price = f"{data['buy_price']:.2f}"
-    sell_price = f"{data['sell_price']:.2f}"
-
-    buy_vol = f"{data['buy_volume']:.2f}" if data["buy_volume"] else "—"
-    sell_vol = f"{data['sell_volume']:.2f}" if data["sell_volume"] else "—"
-
     return (
         f"{name}\n"
-        f"  Покупка: {buy_price} ({buy_vol} USDT)\n"
-        f"  Продажа: {sell_price} ({sell_vol} USDT)\n\n"
+        f"  Покупка: {data['buy_price']:.2f} ({data['buy_volume']:.2f} USDT)\n"
+        f"  Продажа: {data['sell_price']:.2f} ({data['sell_volume']:.2f} USDT)\n\n"
     )
 
 
 # ================= KEYBOARD =================
 def keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📈 Курс", callback_data="rates")]
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text="📈 Курс", callback_data="rates")]]
     )
 
 
@@ -153,7 +165,6 @@ async def main():
 
         await cb.message.answer(text, reply_markup=keyboard())
 
-    # УБИРАЕТ TelegramConflict
     await dp.start_polling(bot, drop_pending_updates=True)
 
 
