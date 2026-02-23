@@ -130,7 +130,7 @@ async def get_grinex(session):
         return "🟠 Grinex: ошибка"
 
 
-# ================= BESTCHANGE (Dubai fixed) =================
+# ================= BESTCHANGE (Dubai clean version) =================
 from bs4 import BeautifulSoup
 import re
 
@@ -144,18 +144,7 @@ COOKIES = {
 }
 
 
-def extract_rate_from_fs(row):
-    fs_blocks = row.select(".fs")
-
-    for fs in fs_blocks:
-        text = fs.get_text(strip=True)
-        if re.search(r"\d+\.\d+", text):   # ищем число типа 3.662900
-            return text
-
-    return None
-
-
-async def parse_sell(session, url):
+async def parse_table(session, url):
     async with session.get(
         url,
         proxy=PROXY_URL,
@@ -168,47 +157,36 @@ async def parse_sell(session, url):
     soup = BeautifulSoup(html, "html.parser")
     rows = soup.select("table#content_table tbody tr")
 
-    results = []
+    data = []
 
-    for row in rows[:3]:
+    for row in rows:
         name_tag = row.select_one(".bj")
-        if not name_tag:
+        rate_tag = row.select_one(".fs")
+
+        if not name_tag or not rate_tag:
             continue
 
-        name = name_tag.get_text(strip=True)
+        # чистое имя (без скрытых span)
+        name = name_tag.find(text=True, recursive=False)
+        if not name:
+            continue
+        name = name.strip()
 
-        full_text = row.get_text(" | ", strip=True)
+        # извлекаем число с точкой
+        rate_text = rate_tag.get_text(strip=True)
+        match = re.search(r"\d+\.\d+", rate_text)
 
-        numbers = re.findall(r"\d+\.\d+", full_text)
-
-        results.append(f"{name} | RAW: {full_text} | FOUND: {numbers}")
-
-    return results
-
-
-async def parse_buy(session, url):
-    async with session.get(url, proxy=PROXY_URL,
-                           headers=HEADERS,
-                           cookies=COOKIES,
-                           timeout=15) as response:
-        html = await response.text()
-
-    soup = BeautifulSoup(html, "html.parser")
-    rows = soup.select("table#content_table tbody tr")
-
-    results = []
-
-    for row in rows[:3]:
-        name_tag = row.select_one(".bj")
-        rate = extract_rate_from_fs(row)
-
-        if not name_tag or not rate:
+        if not match:
             continue
 
-        name = name_tag.get_text(strip=True)
-        results.append(f"{name} — {rate}")
+        rate = float(match.group())
 
-    return results
+        data.append({
+            "name": name,
+            "rate": rate
+        })
+
+    return data[:3]  # топ 3
 
 
 async def get_bestchange(session):
@@ -216,18 +194,18 @@ async def get_bestchange(session):
         sell_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
         buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        sell_list = await parse_sell(session, sell_url)
-        buy_list = await parse_buy(session, buy_url)
+        sell_list = await parse_table(session, sell_url)
+        buy_list = await parse_table(session, buy_url)
 
         text = "💱 USDT/AED (Dubai)\n\n"
 
         text += "🔴 Продажа USDT\n"
         for i, item in enumerate(sell_list, 1):
-            text += f"{i}. {item}\n"
+            text += f"{i}. {item['name']} — {item['rate']}\n"
 
         text += "\n🟢 Покупка USDT\n"
         for i, item in enumerate(buy_list, 1):
-            text += f"{i}. {item}\n"
+            text += f"{i}. {item['name']} — {item['rate']}\n"
 
         return text
 
