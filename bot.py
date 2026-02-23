@@ -135,12 +135,7 @@ from bs4 import BeautifulSoup
 
 
 async def parse_bestchange(session, url):
-    async with session.get(
-        url,
-        proxy=PROXY_URL,
-        headers=HEADERS,
-        timeout=20
-    ) as response:
+    async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
@@ -150,21 +145,38 @@ async def parse_bestchange(session, url):
     results = []
 
     for row in rows[:3]:
-        try:
-            name = row.select_one(".bj").get_text(strip=True)
+        name = row.select_one(".bj").text.strip()
+        rate = row.select_one(".fs").text.strip()
+        reserve = row.select_one(".ar").text.strip()
 
-            # 🔥 Берём правильную колонку курса
-            rate_block = row.select_one(".fs") or row.select_one(".fm")
-            rate = rate_block.get_text(strip=True)
-
-            reserve = row.select_one(".ar").get_text(strip=True)
-
-            results.append(f"{name} — {rate} — резерв: {reserve}")
-
-        except:
-            continue
+        results.append(f"{name} — {rate} — резерв: {reserve}")
 
     return results
+
+
+async def get_bestchange(session):
+    try:
+        buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
+        sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
+
+        buy_list = await parse_bestchange(session, buy_url)
+        sell_list = await parse_bestchange(session, sell_url)
+
+        text = "💱 USDT/AED\n\n"
+
+        text += "🔴 Продажа USDT\n"
+        for i, item in enumerate(sell_list, 1):
+            text += f"{i}. {item}\n"
+
+        text += "\n🟢 Покупка USDT\n"
+        for i, item in enumerate(buy_list, 1):
+            text += f"{i}. {item}\n"
+
+        return text
+
+    except Exception as e:
+        logging.warning(f"BestChange parsing error: {e}")
+        return "💱 USDT/AED: нет данных"
 
 
 # ================= TELEGRAM =================
