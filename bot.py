@@ -137,23 +137,27 @@ async def parse_bestchange(session, url):
 
     soup = BeautifulSoup(html, "html.parser")
 
-    rows = soup.select("#content_table tbody tr")
+    table = soup.find("table", id="content_table")
+    if not table:
+        return []
+
+    rows = table.find_all("tr", class_=lambda x: x and "row" in x)
 
     results = []
 
     for row in rows[:3]:
 
         # Название
-        name_tag = row.select_one(".bj a")
-        name = name_tag.text.strip() if name_tag else "Unknown"
+        name_tag = row.find("span", class_="bj")
+        name = name_tag.get_text(strip=True) if name_tag else "Unknown"
 
-        # Курс (чистый)
-        rate_tag = row.select_one(".fs")
-        rate = rate_tag.text.strip().split("\n")[0] if rate_tag else "—"
+        # Курс
+        rate_tag = row.find("div", class_="fs")
+        rate = rate_tag.get_text(strip=True).split("\n")[0] if rate_tag else "—"
 
         # Резерв
-        reserve_tag = row.select_one(".ar")
-        reserve = reserve_tag.text.strip() if reserve_tag else "—"
+        reserve_tag = row.find("span", class_="ar")
+        reserve = reserve_tag.get_text(strip=True) if reserve_tag else "—"
 
         results.append(f"{name} — {rate} — резерв: {reserve}")
 
