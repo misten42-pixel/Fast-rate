@@ -130,82 +130,47 @@ async def get_grinex(session):
         return "🟠 Grinex: ошибка"
 
 
-# ================= BESTCHANGE (Dubai clean version) =================
+# ================= BESTCHANGE (proxy test) =================
 from bs4 import BeautifulSoup
-import re
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept-Language": "ru-RU,ru;q=0.9"
-}
-
-COOKIES = {
-    "city": "Dubai"
-}
 
 
-async def parse_table(session, url):
-    async with session.get(
-        url,
-        proxy=PROXY_URL,
-        headers=HEADERS,
-        cookies=COOKIES,
-        timeout=15
-    ) as response:
+async def parse_bestchange(session, url):
+    async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
         html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
+
     rows = soup.select("table#content_table tbody tr")
 
-    data = []
+    results = []
 
-    for row in rows:
-        name_tag = row.select_one(".bj")
-        rate_tag = row.select_one(".fs")
+    for row in rows[:3]:
+        name = row.select_one(".bj").text.strip()
+        rate = row.select_one(".fs").text.strip()
+        reserve = row.select_one(".ar").text.strip()
 
-        if not name_tag or not rate_tag:
-            continue
+        results.append(f"{name} — {rate} — резерв: {reserve}")
 
-        # чистое имя (без скрытых span)
-        name = name_tag.find(text=True, recursive=False)
-        if not name:
-            continue
-        name = name.strip()
-
-        # извлекаем число с точкой
-        rate_text = rate_tag.get_text(strip=True)
-        match = re.search(r"\d+\.\d+", rate_text)
-
-        if not match:
-            continue
-
-        rate = float(match.group())
-
-        data.append({
-            "name": name,
-            "rate": rate
-        })
-
-    return data[:3]  # топ 3
+    return results
 
 
 async def get_bestchange(session):
     try:
-        sell_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
-        buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
+        buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
+        sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        sell_list = await parse_table(session, sell_url)
-        buy_list = await parse_table(session, buy_url)
+        buy_list = await parse_bestchange(session, buy_url)
+        sell_list = await parse_bestchange(session, sell_url)
 
-        text = "💱 USDT/AED (Dubai)\n\n"
+        text = "💱 USDT/AED\n\n"
 
         text += "🔴 Продажа USDT\n"
         for i, item in enumerate(sell_list, 1):
-            text += f"{i}. {item['name']} — {item['rate']}\n"
+            text += f"{i}. {item}\n"
 
         text += "\n🟢 Покупка USDT\n"
         for i, item in enumerate(buy_list, 1):
-            text += f"{i}. {item['name']} — {item['rate']}\n"
+            text += f"{i}. {item}\n"
 
         return text
 
