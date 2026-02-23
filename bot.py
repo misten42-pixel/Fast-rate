@@ -168,13 +168,21 @@ async def parse_sell(session, url):
     results = []
 
     for row in rows[:3]:
-        name_tag = row.select_one(".bj")
-        rate = extract_rate_from_fs(row)
+        cells = row.find_all("td")
+        if len(cells) < 3:
+            continue
 
-        if not name_tag or not rate:
+        name_tag = row.select_one(".bj")
+
+        receive_cell = cells[2]                 # колонка "Получаете"
+        rate_tag = receive_cell.select_one(".fs")
+
+        if not name_tag or not rate_tag:
             continue
 
         name = name_tag.get_text(strip=True)
+        rate = rate_tag.get_text(strip=True)
+
         results.append(f"{name} — {rate}")
 
     return results
