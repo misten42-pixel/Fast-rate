@@ -121,6 +121,7 @@ async def get_grinex(session):
 
 
 # ================= BESTCHANGE =================
+# ================= BESTCHANGE FIXED =================
 async def parse_bestchange(url, title):
     try:
         async with aiohttp.ClientSession() as session:
@@ -129,32 +130,25 @@ async def parse_bestchange(url, title):
 
         soup = BeautifulSoup(html, "lxml")
 
-        rows = soup.select("table tr")  # универсально
+        table = soup.find("table", id="rates")
+
+        if not table:
+            return f"{title}: таблица не найдена"
+
+        rows = table.find_all("tr", class_="c1")
 
         results = []
-        count = 0
 
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 5:
-                continue
+        for i, row in enumerate(rows[:3]):
+            name = row.find("td", class_="bj").get_text(strip=True)
+            rate = row.find("td", class_="bi").get_text(strip=True)
+            reserve = row.find("td", class_="ar arp").get_text(strip=True)
 
-            name = cols[0].get_text(strip=True)
-            rate = cols[1].get_text(strip=True)
-            reserve = cols[2].get_text(strip=True)
-            limits = cols[3].get_text(strip=True)
-
-            if name and rate:
-                results.append(
-                    f"{count+1}) {name}\n"
-                    f"Курс: {rate}\n"
-                    f"Резерв: {reserve}\n"
-                    f"Лимиты: {limits}"
-                )
-                count += 1
-
-            if count == 3:
-                break
+            results.append(
+                f"{i+1}) {name}\n"
+                f"Курс: {rate}\n"
+                f"Резерв: {reserve}"
+            )
 
         if not results:
             return f"{title}: нет данных"
@@ -164,21 +158,6 @@ async def parse_bestchange(url, title):
     except Exception as e:
         logging.warning(f"BestChange parse error: {e}")
         return f"{title}: ошибка"
-
-
-async def get_usdt_aed_buy():
-    return await parse_bestchange(
-        "https://www.bestchange.com/tether-trc20-to-dirham.html",
-        "💱 USDT/AED — Покупка USDT"
-    )
-
-
-async def get_usdt_aed_sell():
-    return await parse_bestchange(
-        "https://www.bestchange.com/dirham-to-tether-trc20.html",
-        "💱 USDT/AED — Продажа USDT"
-    )
-
 
 # ================= TELEGRAM =================
 async def main():
