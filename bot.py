@@ -170,13 +170,16 @@ async def parse_bestchange(session, url, is_buy=False):
 
 async def get_bestchange(session):
     try:
-        buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
-        sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
+        buy_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
+        sell_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
 
-       buy_list = await parse_bestchange(session, buy_url, is_buy=True)
-sell_list = await parse_bestchange(session, sell_url, is_buy=False)
+        sell_list = await parse_bestchange(session, sell_url, is_buy=False)
+        buy_list = await parse_bestchange(session, buy_url, is_buy=True)
 
-        text = "💱 USDT/AED\n\n"
+        if not sell_list and not buy_list:
+            return "💱 USDT/AED: нет данных"
+
+        text = "💱 USDT/AED (Dubai)\n\n"
 
         text += "🔴 Продажа USDT\n"
         for i, item in enumerate(sell_list, 1):
