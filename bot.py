@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import aiohttp
-import xml.etree.ElementTree as ET
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
@@ -11,7 +10,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 
-# ================= RAPIRA (JSON) =================
+# ================= RAPIRA =================
 async def get_rapira(session):
     url = "https://api.rapira.net/open/market/rates"
 
@@ -29,8 +28,7 @@ async def get_rapira(session):
                 bid = float(market.get("bidPrice", 0))
                 ask = float(market.get("askPrice", 0))
 
-                if bid and ask:
-                    return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
+                return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
         return "🔵 Rapira: пара не найдена"
 
@@ -39,54 +37,42 @@ async def get_rapira(session):
         return "🔵 Rapira: ошибка"
 
 
-# ================= ABCEX (XML) =================
+# ================= ABCEX (REAL ORDERBOOK) =================
 async def get_abcex(session):
-    url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
+    url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
 
     try:
         async with session.get(url, timeout=10) as response:
-            text = await response.text()
+            if response.status != 200:
+                return "🟣 ABCEX: нет данных"
 
-        if not text or not text.strip():
-            return "🟣 ABCEX: нет данных"
+            data = await response.json()
 
-        root = ET.fromstring(text)
+        bids = data.get("bids", [])
+        asks = data.get("asks", [])
 
-        bid = None
-        ask = None
+        if not bids or not asks:
+            return "🟣 ABCEX: стакан пуст"
 
-        for item in root.findall(".//item"):
-            from_currency = item.find("from")
-            to_currency = item.find("to")
-            out_value = item.find("out")
+        best_bid = float(bids[0][0])
+        best_ask = float(asks[0][0])
 
-            if (
-                from_currency is not None
-                and to_currency is not None
-                and out_value is not None
-            ):
-                if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    ask = float(out_value.text)
-
-                if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    bid = round(1 / float(out_value.text), 2)
-
-        if bid is not None and ask is not None:
-            return f"🟣 ABCEX\nBid: {bid:.2f}\nAsk: {ask:.2f}"
-
-        return "🟣 ABCEX: нет данных"
+        return f"🟣 ABCEX\nBid: {best_bid:.2f}\nAsk: {best_ask:.2f}"
 
     except Exception as e:
         logging.warning(f"ABCEX error: {e}")
         return "🟣 ABCEX: ошибка"
 
 
-# ================= GRINEX (JSON) =================
+# ================= GRINEX =================
 async def get_grinex(session):
     url = "https://grinex.io/rates?offset=0"
 
     try:
         async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                return "🟢 Grinex: нет данных"
+
             data = await response.json()
 
         pair = data.get("usdta7a5")
