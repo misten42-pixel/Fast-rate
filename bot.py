@@ -124,20 +124,25 @@ async def get_grinex(session):
     return "🟠 Grinex: ошибка"
 
 
-# ================= BESTCHANGE PUBLIC MIRRORS =================
-async def get_bestchange(session):
+# ================= BESTCHANGE PUBLIC MIRRORS =================async def get_bestchange(session):
 
     urls = [
-        "http://api.bestchange.ru/info.zip",
         "http://mirror1.bestchange.app/info.zip",
         "http://mirror2.bestchange.app/info.zip",
         "http://mirror3.bestchange.app/info.zip",
         "http://mirror4.bestchange.app/info.zip",
+        "http://api.bestchange.ru/info.zip",
     ]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+    }
 
     for url in urls:
         try:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, headers=headers, timeout=12) as response:
                 if response.status != 200:
                     continue
 
@@ -152,6 +157,7 @@ async def get_bestchange(session):
             exch_root = ET.fromstring(exch_xml)
             curr_root = ET.fromstring(curr_xml)
 
+            # --- найдём ID динамически ---
             usdt_id = None
             aed_id = None
 
@@ -159,16 +165,13 @@ async def get_bestchange(session):
                 name = item.find("name").text.lower()
                 cid = item.find("id").text
 
-                # --- ищем TRC20 ---
                 if "trc20" in name and "tether" in name:
                     usdt_id = cid
 
-                # --- ищем AED наличные ---
-                if "aed" in name and ("cash" in name or "dirham" in name):
+                if "aed" in name:
                     aed_id = cid
 
             if not usdt_id or not aed_id:
-                logging.warning("Currency IDs not found")
                 continue
 
             exchangers = {
@@ -202,7 +205,7 @@ async def get_bestchange(session):
             logging.warning(f"BestChange mirror failed: {e}")
             continue
 
-    return "💱 USDT/AED: нет данных"
+    return "💱 USDT/AED: сервер BestChange не отвечает"
 
 
 # ================= TELEGRAM =================
