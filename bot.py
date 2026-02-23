@@ -40,7 +40,7 @@ async def start_handler(message: types.Message):
     )
 
 # ==============================
-# RAPIRA
+# RAPIRA (БЕЗ PROXY)
 # ==============================
 
 async def get_rapira(session):
@@ -58,7 +58,7 @@ async def get_rapira(session):
         return "🟦 Rapira: нет данных\n"
 
 # ==============================
-# ABCEX
+# ABCEX (БЕЗ PROXY)
 # ==============================
 
 async def get_abcex(session):
@@ -81,7 +81,7 @@ async def get_abcex(session):
         return "🔵 ABCEX: временно недоступен\n"
 
 # ==============================
-# GRINEX
+# GRINEX (БЕЗ PROXY)
 # ==============================
 
 async def get_grinex(session):
@@ -116,7 +116,7 @@ async def rub_handler(message: types.Message):
         await message.answer(result)
 
 # ==============================
-# BESTCHANGE через PROXY
+# BESTCHANGE (ЧЕРЕЗ PROXY)
 # ==============================
 
 async def get_bestchange(session):
