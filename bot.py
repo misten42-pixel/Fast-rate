@@ -48,11 +48,15 @@ async def get_abcex(session):
 
             data = await response.json()
 
+        # Иногда структура вложена в data
+        if "data" in data:
+            data = data["data"]
+
         bids = data.get("bids", [])
         asks = data.get("asks", [])
 
         if not bids or not asks:
-            return "🟣 ABCEX: стакан пуст"
+            return "🟣 ABCEX: нет данных"
 
         best_bid = float(bids[0][0])
         best_ask = float(asks[0][0])
