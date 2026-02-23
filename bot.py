@@ -146,26 +146,20 @@ async def parse_bestchange(session, url, is_buy=False):
 
     for row in rows[:3]:
         try:
-            name_el = row.select_one(".bj")
-            reserve_el = row.select_one(".ar")
-
-            if not name_el or not reserve_el:
+            cells = row.find_all("td")
+            if len(cells) < 5:
                 continue
 
-            name = name_el.get_text(strip=True)
-            reserve = reserve_el.get_text(strip=True)
+            name = cells[0].get_text(strip=True)
 
-            # 🔥 ВАЖНО
             if is_buy:
-                # для покупки берём .fm вместо .fs
-                rate_el = row.select_one(".fm")
+                # 🔥 курс AED находится во второй колонке
+                rate = cells[1].get_text(strip=True)
             else:
-                rate_el = row.select_one(".fs")
+                # 🔥 для продажи — третья колонка
+                rate = cells[2].get_text(strip=True)
 
-            if not rate_el:
-                continue
-
-            rate = rate_el.get_text(strip=True)
+            reserve = cells[4].get_text(strip=True)
 
             results.append(f"{name} — {rate} — резерв: {reserve}")
 
@@ -180,8 +174,8 @@ async def get_bestchange(session):
         buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
         sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        buy_list = await parse_bestchange(session, buy_url, is_buy=True)
-        sell_list = await parse_bestchange(session, sell_url, is_buy=False)
+       buy_list = await parse_bestchange(session, buy_url, is_buy=True)
+sell_list = await parse_bestchange(session, sell_url, is_buy=False)
 
         text = "💱 USDT/AED\n\n"
 
