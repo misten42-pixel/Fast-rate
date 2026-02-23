@@ -3,7 +3,9 @@ import logging
 import os
 import aiohttp
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
+import zipfile
+import io
+import time
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -13,11 +15,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
-
 # ================= RAPIRA =================
 async def get_rapira(session):
     url = "https://api.rapira.net/open/market/rates"
-
     try:
         async with session.get(url, timeout=10) as response:
             data = await response.json()
@@ -26,6 +26,7 @@ async def get_rapira(session):
             if market.get("symbol") == "USDT/RUB":
                 buy = float(market.get("bidPrice", 0))
                 sell = float(market.get("askPrice", 0))
+
                 return (
                     "🟦 Rapira\n\n"
                     f"🔴 Продажа: {sell:.2f}\n"
@@ -37,7 +38,7 @@ async def get_rapira(session):
     return "🟦 Rapira: нет данных"
 
 
-# ================= ABCEX (HYBRID) =================
+# ================= ABCEX HYBRID =================
 async def get_abcex(session):
     depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
     rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
@@ -46,9 +47,8 @@ async def get_abcex(session):
         async with session.get(depth_url, timeout=10) as response:
             data = await response.json()
 
-        orderbook = data.get("data", {})
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
+        bids = data.get("data", {}).get("bids", [])
+        asks = data.get("data", {}).get("asks", [])
 
         if bids and asks:
             buy = float(bids[0][0])
@@ -62,7 +62,7 @@ async def get_abcex(session):
     except:
         pass
 
-    # fallback на rates
+    # fallback
     try:
         async with session.get(rates_url, timeout=10) as response:
             text = await response.text()
@@ -98,7 +98,6 @@ async def get_abcex(session):
 # ================= GRINEX =================
 async def get_grinex(session):
     url = "https://grinex.io/rates?offset=0"
-
     try:
         async with session.get(url, timeout=10) as response:
             data = await response.json()
@@ -120,44 +119,111 @@ async def get_grinex(session):
     return "🟠 Grinex: нет данных"
 
 
-# ================= BESTCHANGE =================
-# ================= BESTCHANGE FIXED =================
-async def parse_bestchange(url, title):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=15) as resp:
-                html = await resp.text()
+# ================= BESTCHANGE PRODUCTION =================
 
-        soup = BeautifulSoup(html, "lxml")
+BESTCHANGE_URL = "https://api.bestchange.ru/info.zip"
+CACHE_TTL = 60
 
-        table = soup.find("table", id="rates")
+_bestchange_cache = {
+    "timestamp": 0,
+    "rates": None,
+    "exch": None
+}
 
-        if not table:
-            return f"{title}: таблица не найдена"
 
-        rows = table.find_all("tr", class_="c1")
+async def get_bestchange_data():
+    now = time.time()
 
-        results = []
+    if (
+        _bestchange_cache["rates"] is not None
+        and now - _bestchange_cache["timestamp"] < CACHE_TTL
+    ):
+        return _bestchange_cache["rates"], _bestchange_cache["exch"]
 
-        for i, row in enumerate(rows[:3]):
-            name = row.find("td", class_="bj").get_text(strip=True)
-            rate = row.find("td", class_="bi").get_text(strip=True)
-            reserve = row.find("td", class_="ar arp").get_text(strip=True)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BESTCHANGE_URL, timeout=20) as resp:
+            content = await resp.read()
 
-            results.append(
-                f"{i+1}) {name}\n"
-                f"Курс: {rate}\n"
-                f"Резерв: {reserve}"
-            )
+    z = zipfile.ZipFile(io.BytesIO(content))
 
-        if not results:
-            return f"{title}: нет данных"
+    rates_xml = z.read("rates.xml")
+    exch_xml = z.read("exch.xml")
 
-        return f"{title}\n\n" + "\n\n".join(results)
+    _bestchange_cache["timestamp"] = now
+    _bestchange_cache["rates"] = rates_xml
+    _bestchange_cache["exch"] = exch_xml
 
-    except Exception as e:
-        logging.warning(f"BestChange parse error: {e}")
-        return f"{title}: ошибка"
+    return rates_xml, exch_xml
+
+
+def parse_bestchange_xml(rates_xml, exch_xml, from_id, to_id, title, reverse=False):
+    rates_root = ET.fromstring(rates_xml)
+    exch_root = ET.fromstring(exch_xml)
+
+    exch_dict = {
+        exch.find("id").text: exch.find("name").text
+        for exch in exch_root.findall("exchanger")
+    }
+
+    results = []
+
+    for rate in rates_root.findall("rate"):
+        if (
+            rate.find("from").text == str(from_id)
+            and rate.find("to").text == str(to_id)
+        ):
+            exch_id = rate.find("exchanger").text
+            price = float(rate.find("in").text)
+            reserve = rate.find("reserve").text
+
+            name = exch_dict.get(exch_id, "Unknown")
+            results.append((price, name, reserve))
+
+    if not results:
+        return f"{title}: нет данных"
+
+    results.sort(key=lambda x: x[0], reverse=reverse)
+    top3 = results[:3]
+
+    text = f"{title}\n\n"
+
+    for i, (price, name, reserve) in enumerate(top3, 1):
+        text += (
+            f"{i}) {name}\n"
+            f"Курс: {price:.4f}\n"
+            f"Резерв: {reserve}\n\n"
+        )
+
+    return text.strip()
+
+
+# BestChange IDs
+# 36 = USDT TRC20
+# 93 = AED Cash
+
+async def get_usdt_aed_buy():
+    rates_xml, exch_xml = await get_bestchange_data()
+    return parse_bestchange_xml(
+        rates_xml,
+        exch_xml,
+        36,
+        93,
+        "💱 USDT/AED — Покупка USDT",
+        reverse=False
+    )
+
+
+async def get_usdt_aed_sell():
+    rates_xml, exch_xml = await get_bestchange_data()
+    return parse_bestchange_xml(
+        rates_xml,
+        exch_xml,
+        93,
+        36,
+        "💱 USDT/AED — Продажа USDT",
+        reverse=True
+    )
+
 
 # ================= TELEGRAM =================
 async def main():
@@ -187,15 +253,13 @@ async def main():
                 get_abcex(session),
                 get_grinex(session)
             )
-
         await message.answer("\n\n".join(results))
 
     @dp.message(lambda m: m.text == "💱 USDT/AED")
     async def aed_handler(message: types.Message):
-        buy = await get_usdt_aed_buy()
         sell = await get_usdt_aed_sell()
-
-        await message.answer(f"{buy}\n\n{sell}")
+        buy = await get_usdt_aed_buy()
+        await message.answer(f"{sell}\n\n{buy}")
 
     await dp.start_polling(bot)
 
