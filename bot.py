@@ -36,17 +36,14 @@ async def get_rapira(session):
 
         return "🟦 Rapira: нет данных"
 
-    except Exception as e:
-        logging.warning(f"Rapira error: {e}")
+    except Exception:
         return "🟦 Rapira: ошибка"
 
 
-# ================= ABCEX (HYBRID STABLE) =================
+# ================= ABCEX =================
 async def get_abcex(session):
     depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
-    rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
 
-    # ===== 1. Пытаемся стакан =====
     try:
         async with session.get(depth_url) as response:
             if response.status == 200:
@@ -65,42 +62,8 @@ async def get_abcex(session):
                         f"🔴 Продажа: {sell:.2f}\n"
                         f"🟢 Покупка: {buy:.2f}"
                     )
-    except Exception as e:
-        logging.warning(f"ABCEX depth error: {e}")
-
-    # ===== 2. Fallback на rates =====
-    try:
-        async with session.get(rates_url) as response:
-            if response.status != 200:
-                return "🔵 ABCEX: временно недоступен"
-
-            text = await response.text()
-
-        root = ET.fromstring(text)
-
-        buy = None
-        sell = None
-
-        for item in root.findall(".//item"):
-            from_currency = item.find("from")
-            to_currency = item.find("to")
-            out_value = item.find("out")
-
-            if from_currency is not None and to_currency is not None:
-                if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    sell = float(out_value.text)
-                if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    buy = round(1 / float(out_value.text), 2)
-
-        if buy and sell:
-            return (
-                "🔵 ABCEX (rates)\n\n"
-                f"🔴 Продажа: {sell:.2f}\n"
-                f"🟢 Покупка: {buy:.2f}"
-            )
-
-    except Exception as e:
-        logging.warning(f"ABCEX rates error: {e}")
+    except Exception:
+        pass
 
     return "🔵 ABCEX: временно недоступен"
 
@@ -129,9 +92,48 @@ async def get_grinex(session):
 
         return "🟠 Grinex: нет данных"
 
-    except Exception as e:
-        logging.warning(f"Grinex error: {e}")
+    except Exception:
         return "🟠 Grinex: ошибка"
+
+
+# ================= BESTCHANGE API =================
+async def get_bestchange_usdt_aed(session):
+    try:
+        url = "https://bestchange.app/api/v1/exchange"
+
+        params = {
+            "from": "tether-trc20",
+            "to": "cash-aed",
+            "limit": 3
+        }
+
+        async with session.get(url, params=params) as response:
+            if response.status != 200:
+                return "💱 USDT/AED: нет данных"
+
+            data = await response.json()
+
+        if not data.get("data"):
+            return "💱 USDT/AED: нет данных"
+
+        text = "💱 USDT/AED (Top 3)\n\n"
+
+        for i, item in enumerate(data["data"], 1):
+            rate = float(item["rate"])
+            reserve = item.get("reserve", "—")
+            exchanger = item.get("name", "Unknown")
+
+            text += (
+                f"{i}) {exchanger}\n"
+                f"Курс: {rate:.4f}\n"
+                f"Резерв: {reserve}\n\n"
+            )
+
+        return text.strip()
+
+    except Exception as e:
+        logging.warning(f"BestChange error: {e}")
+        return "💱 USDT/AED: ошибка"
 
 
 # ================= TELEGRAM =================
@@ -143,40 +145,48 @@ async def main():
     dp = Dispatcher()
 
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📊 Rate USDT/₽")]],
+        keyboard=[
+            [KeyboardButton(text="📊 Rate USDT/₽")],
+            [KeyboardButton(text="💱 USDT/AED")]
+        ],
         resize_keyboard=True
     )
 
     @dp.message(Command("start"))
     async def start_handler(message: types.Message):
         await message.answer(
-            "Бот запущен.\nНажмите кнопку ниже:",
+            "Бот запущен.\nВыберите направление:",
             reply_markup=keyboard
         )
 
-    @dp.message(Command("rate"))
+    # ===== RUB кнопка =====
     @dp.message(lambda message: message.text == "📊 Rate USDT/₽")
-    async def rate_handler(message: types.Message):
+    async def rub_handler(message: types.Message):
 
         timeout = aiohttp.ClientTimeout(total=8)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            tasks = [
+            results = await asyncio.gather(
                 get_rapira(session),
                 get_abcex(session),
-                get_grinex(session)
-            ]
+                get_grinex(session),
+                return_exceptions=True
+            )
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        await message.answer("\n\n".join(results))
 
-        formatted = []
-        for r in results:
-            if isinstance(r, Exception):
-                formatted.append("⚠️ Ошибка получения данных")
-            else:
-                formatted.append(r)
 
-        await message.answer("\n\n".join(formatted))
+    # ===== AED кнопка =====
+    @dp.message(lambda message: message.text == "💱 USDT/AED")
+    async def aed_handler(message: types.Message):
+
+        timeout = aiohttp.ClientTimeout(total=8)
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            result = await get_bestchange_usdt_aed(session)
+
+        await message.answer(result)
+
 
     await dp.start_polling(bot)
 
