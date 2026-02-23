@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 import os
 import aiohttp
 import xml.etree.ElementTree as ET
@@ -155,12 +154,6 @@ def extract_rate_from_fs(row):
 
     return None
 
-
-import re
-
-import re
-
-import re
 
 async def parse_sell(session, url):
     async with session.get(
