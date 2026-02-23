@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import aiohttp
+import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
@@ -10,53 +11,39 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 
-# ================= RAPIRA =================
+# ================= RAPIRA DIAGNOSTIC =================
 async def get_rapira(session):
     url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
     try:
         async with session.get(url, timeout=10) as resp:
-            data = await resp.json()
+            logging.info(f"RAPIRA STATUS: {resp.status}")
+            text = await resp.text()
+            logging.info(f"RAPIRA RAW RESPONSE:\n{text}")
 
-        asks = data.get("asks", [])
-        bids = data.get("bids", [])
-
-        if not asks or not bids:
-            return "🔵 Rapira: нет данных"
-
-        return (
-            f"🔵 Rapira\n"
-            f"Bid: {float(bids[0][0]):.2f} ({float(bids[0][1])})\n"
-            f"Ask: {float(asks[0][0]):.2f} ({float(asks[0][1])})"
-        )
+        return "🔵 Rapira: смотри логи Railway"
 
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
         return "🔵 Rapira: ошибка"
 
 
-# ================= ABCEX =================
+# ================= ABCEX DIAGNOSTIC =================
 async def get_abcex(session):
     url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
     try:
         async with session.get(url, timeout=10) as resp:
-            data = await resp.json()
+            logging.info(f"ABCEX STATUS: {resp.status}")
+            text = await resp.text()
+            logging.info(f"ABCEX RAW RESPONSE:\n{text}")
 
-        for item in data.get("data", []):
-            if item.get("symbol") == "USDTRUB":
-                return (
-                    f"🟣 ABCEX\n"
-                    f"Bid: {float(item.get('bidPrice', 0)):.2f}\n"
-                    f"Ask: {float(item.get('askPrice', 0)):.2f}"
-                )
-
-        return "🟣 ABCEX: пара не найдена"
+        return "🟣 ABCEX: смотри логи Railway"
 
     except Exception as e:
         logging.warning(f"ABCEX error: {e}")
         return "🟣 ABCEX: ошибка"
 
 
-# ================= GRINEX (JSON) =================
+# ================= GRINEX (рабочий JSON) =================
 async def get_grinex(session):
     url = "https://grinex.io/rates?offset=0"
     try:
@@ -92,7 +79,7 @@ async def main():
 
     @dp.message(Command("start"))
     async def start_handler(message: types.Message):
-        await message.answer("Бот запущен.\nКоманда: /rate")
+        await message.answer("Диагностический режим.\nКоманда: /rate")
 
     @dp.message(Command("rate"))
     async def rate_handler(message: types.Message):
