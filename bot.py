@@ -160,6 +160,8 @@ import re
 
 import re
 
+import re
+
 async def parse_sell(session, url):
     async with session.get(
         url,
@@ -180,18 +182,13 @@ async def parse_sell(session, url):
         if not name_tag:
             continue
 
-        # чистое имя без лишнего текста
-        name = name_tag.find(text=True, recursive=False).strip()
+        name = name_tag.get_text(strip=True)
 
-        text = row.get_text(" ", strip=True)
-        numbers = re.findall(r"\d+\.\d+", text)
+        full_text = row.get_text(" | ", strip=True)
 
-        if not numbers:
-            continue
+        numbers = re.findall(r"\d+\.\d+", full_text)
 
-        rate = numbers[0]
-
-        results.append(f"{name} — {rate}")
+        results.append(f"{name} | RAW: {full_text} | FOUND: {numbers}")
 
     return results
 
