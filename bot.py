@@ -11,45 +11,28 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 
-# ================= RAPIRA (XML, STABLE) =================
+# ================= RAPIRA (JSON) =================
 async def get_rapira(session):
-    url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
+    url = "https://api.rapira.net/open/market/rates"
 
     try:
         async with session.get(url, timeout=10) as response:
-            text = await response.text()
+            if response.status != 200:
+                return "🔵 Rapira: нет данных"
 
-        if not text or not text.strip():
-            return "🔵 Rapira: нет данных"
+            data = await response.json()
 
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError:
-            return "🔵 Rapira: ошибка парсинга"
+        markets = data.get("data", [])
 
-        bid = None
-        ask = None
+        for market in markets:
+            if market.get("symbol") == "USDT/RUB":
+                bid = float(market.get("bidPrice", 0))
+                ask = float(market.get("askPrice", 0))
 
-        for item in root.findall(".//item"):
-            from_currency = item.find("from")
-            to_currency = item.find("to")
-            out_value = item.find("out")
+                if bid and ask:
+                    return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
-            if (
-                from_currency is not None
-                and to_currency is not None
-                and out_value is not None
-            ):
-                if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    ask = float(out_value.text)
-
-                if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    bid = round(1 / float(out_value.text), 2)
-
-        if bid is not None and ask is not None:
-            return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
-
-        return "🔵 Rapira: нет данных"
+        return "🔵 Rapira: пара не найдена"
 
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
@@ -111,14 +94,10 @@ async def get_grinex(session):
         if not pair:
             return "🟢 Grinex: нет данных"
 
-        buy = float(pair.get("buy", 0))
-        sell = float(pair.get("sell", 0))
+        bid = float(pair.get("buy", 0))
+        ask = float(pair.get("sell", 0))
 
-        return (
-            f"🟢 Grinex\n"
-            f"Bid: {buy:.2f}\n"
-            f"Ask: {sell:.2f}"
-        )
+        return f"🟢 Grinex\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
     except Exception as e:
         logging.warning(f"Grinex error: {e}")
