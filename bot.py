@@ -137,7 +137,7 @@ async def get_bestchange(session):
 
     for url in urls:
         try:
-            async with session.get(url, timeout=8) as response:
+            async with session.get(url, timeout=10) as response:
                 if response.status != 200:
                     continue
 
@@ -146,9 +146,28 @@ async def get_bestchange(session):
             with zipfile.ZipFile(io.BytesIO(data)) as z:
                 rates_xml = z.read("rates.xml")
                 exch_xml = z.read("exchangers.xml")
+                curr_xml = z.read("currencies.xml")
 
             rates_root = ET.fromstring(rates_xml)
             exch_root = ET.fromstring(exch_xml)
+            curr_root = ET.fromstring(curr_xml)
+
+            # --- Находим ID валют ---
+            usdt_id = None
+            aed_id = None
+
+            for item in curr_root.findall("item"):
+                name = item.find("name").text.lower()
+                cid = item.find("id").text
+
+                if "tether trc20" in name:
+                    usdt_id = cid
+
+                if "aed" in name or "dirham" in name:
+                    aed_id = cid
+
+            if not usdt_id or not aed_id:
+                continue
 
             exchangers = {
                 item.find("id").text: item.find("name").text
@@ -157,10 +176,11 @@ async def get_bestchange(session):
 
             results = []
 
-            # 93 = USDT TRC20
-            # 66 = AED Cash
             for rate in rates_root.findall("item"):
-                if rate.find("from").text == "93" and rate.find("to").text == "66":
+                if (
+                    rate.find("from").text == usdt_id and
+                    rate.find("to").text == aed_id
+                ):
                     exch_id = rate.find("exchange").text
                     price = float(rate.find("in").text)
 
