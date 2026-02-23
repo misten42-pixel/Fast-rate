@@ -134,7 +134,7 @@ async def get_grinex(session):
 from bs4 import BeautifulSoup
 
 
-async def parse_bestchange(session, url):
+async def parse_bestchange(session, url, is_buy=False):
     async with session.get(url, proxy=PROXY_URL, timeout=15) as response:
         html = await response.text()
 
@@ -145,11 +145,32 @@ async def parse_bestchange(session, url):
     results = []
 
     for row in rows[:3]:
-        name = row.select_one(".bj").text.strip()
-        rate = row.select_one(".fs").text.strip()
-        reserve = row.select_one(".ar").text.strip()
+        try:
+            name_el = row.select_one(".bj")
+            reserve_el = row.select_one(".ar")
 
-        results.append(f"{name} — {rate} — резерв: {reserve}")
+            if not name_el or not reserve_el:
+                continue
+
+            name = name_el.get_text(strip=True)
+            reserve = reserve_el.get_text(strip=True)
+
+            # 🔥 ВАЖНО
+            if is_buy:
+                # для покупки берём .fm вместо .fs
+                rate_el = row.select_one(".fm")
+            else:
+                rate_el = row.select_one(".fs")
+
+            if not rate_el:
+                continue
+
+            rate = rate_el.get_text(strip=True)
+
+            results.append(f"{name} — {rate} — резерв: {reserve}")
+
+        except:
+            continue
 
     return results
 
@@ -159,8 +180,8 @@ async def get_bestchange(session):
         buy_url = "https://www.bestchange.com/tether-trc20-to-dirham.html"
         sell_url = "https://www.bestchange.com/dirham-to-tether-trc20.html"
 
-        buy_list = await parse_bestchange(session, buy_url)
-        sell_list = await parse_bestchange(session, sell_url)
+        buy_list = await parse_bestchange(session, buy_url, is_buy=True)
+        sell_list = await parse_bestchange(session, sell_url, is_buy=False)
 
         text = "💱 USDT/AED\n\n"
 
