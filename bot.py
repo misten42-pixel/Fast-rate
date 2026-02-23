@@ -1,125 +1,175 @@
 import asyncio
-import aiohttp
+import logging
 import os
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+import aiohttp
+import xml.etree.ElementTree as ET
+
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from bs4 import BeautifulSoup
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не установлен")
+logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
 
-# ================== KEYBOARD ==================
+# ================= RAPIRA =================
+async def get_rapira(session):
+    url = "https://api.rapira.net/open/market/rates"
 
-keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📊 Rate USDT/₽")],
-    ],
-    resize_keyboard=True
-)
-
-# ================== RAPIRA ==================
-
-async def get_rapira():
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB",
-                timeout=10
-            ) as resp:
-                data = await resp.json()
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                return "🟦 Rapira: нет данных"
 
-        bid = data["bids"][0][0]
-        ask = data["asks"][0][0]
+            data = await response.json()
 
-        return (
-            "🟦 Rapira\n\n"
-            f"🔴 Продажа: {ask}\n"
-            f"🟢 Покупка: {bid}"
-        )
-    except:
-        return "🟦 Rapira\n\nВременно недоступно"
-
-# ================== ABCEX ==================
-
-async def get_abcex():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates",
-                timeout=10
-            ) as resp:
-                data = await resp.json()
-
-        for pair in data["data"]:
-            if pair["symbol"] == "USDT/RUB":
-                bid = pair["bidPrice"]
-                ask = pair["askPrice"]
+        for market in data.get("data", []):
+            if market.get("symbol") == "USDT/RUB":
+                buy = float(market.get("bidPrice", 0))
+                sell = float(market.get("askPrice", 0))
 
                 return (
-                    "🟦 ABCEX\n\n"
-                    f"🔴 Продажа: {ask}\n"
-                    f"🟢 Покупка: {bid}"
+                    "🟦 Rapira\n\n"
+                    f"🔴 Продажа: {sell:.2f}\n"
+                    f"🟢 Покупка: {buy:.2f}"
                 )
 
-        return "🟦 ABCEX\n\nНет данных"
+        return "🟦 Rapira: нет данных"
 
-    except:
-        return "🟦 ABCEX\n\nВременно недоступно"
+    except Exception as e:
+        logging.warning(f"Rapira error: {e}")
+        return "🟦 Rapira: ошибка"
 
-# ================== GRINEX ==================
 
-async def get_grinex():
+# ================= ABCEX (HYBRID) =================
+async def get_abcex(session):
+    depth_url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
+    rates_url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
+
+    # --- Пытаемся получить стакан ---
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://grinex.io/trading/usdta7a5",
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0"}
-            ) as resp:
-                html = await resp.text()
+        async with session.get(depth_url, timeout=10) as response:
+            if response.status == 200:
+                data = await response.json()
+                orderbook = data.get("data", data)
 
-        soup = BeautifulSoup(html, "html.parser")
-        prices = soup.find_all("span", class_="price")
+                bids = orderbook.get("bids", [])
+                asks = orderbook.get("asks", [])
 
-        if len(prices) >= 2:
-            ask = prices[0].text.strip()
-            bid = prices[1].text.strip()
+                if bids and asks:
+                    buy = float(bids[0][0])
+                    sell = float(asks[0][0])
 
+                    return (
+                        "🔵 ABCEX\n\n"
+                        f"🔴 Продажа: {sell:.2f}\n"
+                        f"🟢 Покупка: {buy:.2f}"
+                    )
+    except Exception:
+        pass
+
+    # --- fallback на rates ---
+    try:
+        async with session.get(rates_url, timeout=10) as response:
+            if response.status != 200:
+                return "🔵 ABCEX: временно недоступен"
+
+            text = await response.text()
+
+        root = ET.fromstring(text)
+
+        buy = None
+        sell = None
+
+        for item in root.findall(".//item"):
+            from_currency = item.find("from")
+            to_currency = item.find("to")
+            out_value = item.find("out")
+
+            if from_currency is not None and to_currency is not None:
+                if from_currency.text == "USDT" and to_currency.text == "RUB":
+                    sell = float(out_value.text)
+                if from_currency.text == "RUB" and to_currency.text == "USDT":
+                    buy = round(1 / float(out_value.text), 2)
+
+        if buy and sell:
             return (
-                "🟧 Grinex\n\n"
-                f"🔴 Продажа: {ask}\n"
-                f"🟢 Покупка: {bid}"
+                "🔵 ABCEX (rates)\n\n"
+                f"🔴 Продажа: {sell:.2f}\n"
+                f"🟢 Покупка: {buy:.2f}"
             )
 
-        return "🟧 Grinex\n\nНет данных"
+        return "🔵 ABCEX: временно недоступен"
 
-    except:
-        return "🟧 Grinex\n\nВременно недоступно"
+    except Exception:
+        return "🔵 ABCEX: временно недоступен"
 
-# ================== HANDLERS ==================
 
-@dp.message(Command("start"))
-async def start_handler(message: Message):
-    await message.answer("Выберите направление:", reply_markup=keyboard)
+# ================= GRINEX =================
+async def get_grinex(session):
+    url = "https://grinex.io/rates?offset=0"
 
-@dp.message(F.text == "📊 Rate USDT/₽")
-async def rub_handler(message: Message):
-    rapira = await get_rapira()
-    abcex = await get_abcex()
-    grinex = await get_grinex()
+    try:
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                return "🟠 Grinex: нет данных"
 
-    await message.answer(f"{rapira}\n\n{abcex}\n\n{grinex}")
+            data = await response.json()
 
-# ================== RUN ==================
+        pair = data.get("usdta7a5")
 
+        if pair:
+            buy = float(pair.get("buy", 0))
+            sell = float(pair.get("sell", 0))
+
+            return (
+                "🟠 Grinex\n\n"
+                f"🔴 Продажа: {sell:.2f}\n"
+                f"🟢 Покупка: {buy:.2f}"
+            )
+
+        return "🟠 Grinex: нет данных"
+
+    except Exception as e:
+        logging.warning(f"Grinex error: {e}")
+        return "🟠 Grinex: ошибка"
+
+
+# ================= TELEGRAM =================
 async def main():
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN не установлен")
+
+    bot = Bot(BOT_TOKEN)
+    dp = Dispatcher()
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📊 Rate USDT/₽")]],
+        resize_keyboard=True
+    )
+
+    @dp.message(Command("start"))
+    async def start_handler(message: types.Message):
+        await message.answer(
+            "Бот запущен.\nНажмите кнопку ниже:",
+            reply_markup=keyboard
+        )
+
+    @dp.message(Command("rate"))
+    @dp.message(lambda message: message.text == "📊 Rate USDT/₽")
+    async def rate_handler(message: types.Message):
+        async with aiohttp.ClientSession() as session:
+            results = await asyncio.gather(
+                get_rapira(session),
+                get_abcex(session),
+                get_grinex(session)
+            )
+
+        await message.answer("\n\n".join(results))
+
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
