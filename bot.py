@@ -11,7 +11,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 
-# ================= RAPIRA (XML) =================
+# ================= RAPIRA (XML, STABLE) =================
 async def get_rapira(session):
     url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
 
@@ -19,7 +19,13 @@ async def get_rapira(session):
         async with session.get(url, timeout=10) as response:
             text = await response.text()
 
-        root = ET.fromstring(text)
+        if not text or not text.strip():
+            return "🔵 Rapira: нет данных"
+
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return "🔵 Rapira: ошибка парсинга"
 
         bid = None
         ask = None
@@ -29,14 +35,18 @@ async def get_rapira(session):
             to_currency = item.find("to")
             out_value = item.find("out")
 
-            if from_currency is not None and to_currency is not None:
+            if (
+                from_currency is not None
+                and to_currency is not None
+                and out_value is not None
+            ):
                 if from_currency.text == "USDT" and to_currency.text == "RUB":
                     ask = float(out_value.text)
 
                 if from_currency.text == "RUB" and to_currency.text == "USDT":
                     bid = round(1 / float(out_value.text), 2)
 
-        if bid and ask:
+        if bid is not None and ask is not None:
             return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
         return "🔵 Rapira: нет данных"
@@ -54,6 +64,9 @@ async def get_abcex(session):
         async with session.get(url, timeout=10) as response:
             text = await response.text()
 
+        if not text or not text.strip():
+            return "🟣 ABCEX: нет данных"
+
         root = ET.fromstring(text)
 
         bid = None
@@ -64,14 +77,18 @@ async def get_abcex(session):
             to_currency = item.find("to")
             out_value = item.find("out")
 
-            if from_currency is not None and to_currency is not None:
+            if (
+                from_currency is not None
+                and to_currency is not None
+                and out_value is not None
+            ):
                 if from_currency.text == "USDT" and to_currency.text == "RUB":
                     ask = float(out_value.text)
 
                 if from_currency.text == "RUB" and to_currency.text == "USDT":
                     bid = round(1 / float(out_value.text), 2)
 
-        if bid and ask:
+        if bid is not None and ask is not None:
             return f"🟣 ABCEX\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
         return "🟣 ABCEX: нет данных"
@@ -91,6 +108,9 @@ async def get_grinex(session):
 
         pair = data.get("usdta7a5")
 
+        if not pair:
+            return "🟢 Grinex: нет данных"
+
         buy = float(pair.get("buy", 0))
         sell = float(pair.get("sell", 0))
 
@@ -107,6 +127,9 @@ async def get_grinex(session):
 
 # ================= TELEGRAM =================
 async def main():
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN не установлен")
+
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
 
