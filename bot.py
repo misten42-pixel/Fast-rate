@@ -11,23 +11,35 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
 
-# ================= RAPIRA =================
+# ================= RAPIRA (XML) =================
 async def get_rapira(session):
     url = "https://api.rapira.net/market/exchange-plate-mini?symbol=USDT/RUB"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
-    }
-
     try:
-        async with session.get(url, headers=headers, timeout=10) as resp:
-            text = await resp.text()
+        async with session.get(url, timeout=10) as response:
+            text = await response.text()
 
-            if not text.strip():
-                return "🔵 Rapira: пустой ответ (возможно блокировка IP)"
+        root = ET.fromstring(text)
 
-            return "🔵 Rapira: получен ответ (смотри логи)"
+        bid = None
+        ask = None
+
+        for item in root.findall(".//item"):
+            from_currency = item.find("from")
+            to_currency = item.find("to")
+            out_value = item.find("out")
+
+            if from_currency is not None and to_currency is not None:
+                if from_currency.text == "USDT" and to_currency.text == "RUB":
+                    ask = float(out_value.text)
+
+                if from_currency.text == "RUB" and to_currency.text == "USDT":
+                    bid = round(1 / float(out_value.text), 2)
+
+        if bid and ask:
+            return f"🔵 Rapira\nBid: {bid:.2f}\nAsk: {ask:.2f}"
+
+        return "🔵 Rapira: нет данных"
 
     except Exception as e:
         logging.warning(f"Rapira error: {e}")
@@ -39,51 +51,43 @@ async def get_abcex(session):
     url = "https://gateway.abcex.io/api/v2/exchange/public/trade/spot/rates"
 
     try:
-        async with session.get(url, timeout=10) as resp:
-            text = await resp.text()
+        async with session.get(url, timeout=10) as response:
+            text = await response.text()
 
         root = ET.fromstring(text)
 
-        buy = None
-        sell = None
+        bid = None
+        ask = None
 
         for item in root.findall(".//item"):
             from_currency = item.find("from")
             to_currency = item.find("to")
             out_value = item.find("out")
 
-            if (
-                from_currency is not None
-                and to_currency is not None
-                and out_value is not None
-            ):
+            if from_currency is not None and to_currency is not None:
                 if from_currency.text == "USDT" and to_currency.text == "RUB":
-                    sell = float(out_value.text)
+                    ask = float(out_value.text)
 
                 if from_currency.text == "RUB" and to_currency.text == "USDT":
-                    buy = 1 / float(out_value.text)
+                    bid = round(1 / float(out_value.text), 2)
 
-        if buy and sell:
-            return (
-                f"🟣 ABCEX\n"
-                f"Bid: {buy:.2f}\n"
-                f"Ask: {sell:.2f}"
-            )
+        if bid and ask:
+            return f"🟣 ABCEX\nBid: {bid:.2f}\nAsk: {ask:.2f}"
 
-        return "🟣 ABCEX: пара не найдена"
+        return "🟣 ABCEX: нет данных"
 
     except Exception as e:
         logging.warning(f"ABCEX error: {e}")
         return "🟣 ABCEX: ошибка"
 
 
-# ================= GRINEX =================
+# ================= GRINEX (JSON) =================
 async def get_grinex(session):
     url = "https://grinex.io/rates?offset=0"
 
     try:
-        async with session.get(url, timeout=10) as resp:
-            data = await resp.json()
+        async with session.get(url, timeout=10) as response:
+            data = await response.json()
 
         pair = data.get("usdta7a5")
 
@@ -105,6 +109,10 @@ async def get_grinex(session):
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
+
+    @dp.message(Command("start"))
+    async def start_handler(message: types.Message):
+        await message.answer("Бот запущен.\nКоманда: /rate")
 
     @dp.message(Command("rate"))
     async def rate_handler(message: types.Message):
