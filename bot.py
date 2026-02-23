@@ -16,7 +16,6 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-
 # ==============================
 # КНОПКИ
 # ==============================
@@ -29,7 +28,6 @@ keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-
 # ==============================
 # START
 # ==============================
@@ -40,7 +38,6 @@ async def start_handler(message: types.Message):
         "Бот запущен.\nНажмите кнопку ниже:",
         reply_markup=keyboard
     )
-
 
 # ==============================
 # RAPIRA
@@ -56,12 +53,12 @@ async def get_rapira(session):
         buy = float(data["data"]["bids"][0][0])
 
         return f"🟦 Rapira\n🔴 Продажа: {sell}\n🟢 Покупка: {buy}\n"
+
     except:
         return "🟦 Rapira: нет данных\n"
 
-
 # ==============================
-# ABCEX гибрид
+# ABCEX
 # ==============================
 
 async def get_abcex(session):
@@ -78,11 +75,10 @@ async def get_abcex(session):
         sell = float(pair["sell"])
         buy = float(pair["buy"])
 
-        return f"🔵 ABCEX (rates)\n🔴 Продажа: {sell}\n🟢 Покупка: {buy}\n"
+        return f"🔵 ABCEX\n🔴 Продажа: {sell}\n🟢 Покупка: {buy}\n"
 
     except:
         return "🔵 ABCEX: временно недоступен\n"
-
 
 # ==============================
 # GRINEX
@@ -102,9 +98,8 @@ async def get_grinex(session):
     except:
         return "🟠 Grinex: нет данных\n"
 
-
 # ==============================
-# USDT/RUB HANDLER
+# USDT/RUB
 # ==============================
 
 @dp.message(lambda message: message.text == "📊 Rate USDT/₽")
@@ -120,9 +115,8 @@ async def rub_handler(message: types.Message):
 
         await message.answer(result)
 
-
 # ==============================
-# BESTCHANGE (USDT/AED)
+# BESTCHANGE через PROXY
 # ==============================
 
 async def get_bestchange(session):
@@ -174,19 +168,16 @@ async def get_bestchange(session):
     except Exception as e:
         return f"💱 USDT/AED ошибка: {str(e)}"
 
-
 # ==============================
-# USDT/AED HANDLER
+# USDT/AED
 # ==============================
 
 @dp.message(lambda message: message.text == "💱 USDT/AED")
 async def aed_handler(message: types.Message):
 
     async with aiohttp.ClientSession() as session:
-
         result = await get_bestchange(session)
         await message.answer(result)
-
 
 # ==============================
 # RUN
