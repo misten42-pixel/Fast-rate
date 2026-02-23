@@ -41,40 +41,39 @@ async def get_rapira(session):
 async def get_abcex(session):
     url = "https://gateway.abcex.io/api/v2/exchange/public/orderbook/depth?instrumentCode=USDTRUB"
 
-    try:
-        async with session.get(url, timeout=10) as response:
-            if response.status != 200:
-                return "🟣 ABCEX: нет данных"
+    for attempt in range(2):  # 2 попытки
+        try:
+            async with session.get(url, timeout=10) as response:
+                if response.status != 200:
+                    continue
 
-            data = await response.json()
+                data = await response.json()
 
-        # Универсальное извлечение стакана
-        orderbook = None
+            # Возможные варианты структуры
+            if "data" in data:
+                if isinstance(data["data"], dict):
+                    orderbook = data["data"]
+                elif isinstance(data["data"], list) and len(data["data"]) > 0:
+                    orderbook = data["data"][0]
+                else:
+                    continue
+            else:
+                orderbook = data
 
-        if "data" in data:
-            if isinstance(data["data"], dict):
-                orderbook = data["data"]
-            elif isinstance(data["data"], list) and len(data["data"]) > 0:
-                orderbook = data["data"][0]
+            bids = orderbook.get("bids", [])
+            asks = orderbook.get("asks", [])
 
-        if not orderbook:
-            return "🟣 ABCEX: нет данных"
+            if bids and asks:
+                best_bid = float(bids[0][0])
+                best_ask = float(asks[0][0])
+                return f"🟣 ABCEX\nBid: {best_bid:.2f}\nAsk: {best_ask:.2f}"
 
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
+        except Exception:
+            continue
 
-        if not bids or not asks:
-            return "🟣 ABCEX: нет данных"
+        await asyncio.sleep(1)
 
-        best_bid = float(bids[0][0])
-        best_ask = float(asks[0][0])
-
-        return f"🟣 ABCEX\nBid: {best_bid:.2f}\nAsk: {best_ask:.2f}"
-
-    except Exception as e:
-        logging.warning(f"ABCEX error: {e}")
-        return "🟣 ABCEX: ошибка"
-
+    return "🟣 ABCEX: временно недоступен"
 
 # ================= GRINEX =================
 async def get_grinex(session):
